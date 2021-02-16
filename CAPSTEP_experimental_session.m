@@ -124,9 +124,54 @@ fclose(fileID);
 % save the ratings
 save('intensity_ratings.mat','intensity_ratings');
 
+%% FUNCTIONS
+% timer core function 
+function timer_function(block_timer, this_event)
+% timepoint parameters
+pre_times = [15 30 45 60 75 90 105 120];
+post_times = [10 25 40 55 70 85 100 115 130];
 
+% dynamic parameters
+exec_count = get(block_timer, 'TasksExecuted');
 
+% get the time
+c = fix(clock);
+time = [num2str(c(4)) ':' num2str(c(5))];
+clear c
 
+% decide which type of event has occured and perform the task accordingly
+if ismember(exec_count, pre_times)               % if this event happens at the beginning of a new block 
+    user_data = get(block_timer, 'UserData');
+    
+    % update the couter
+    user_data{1} = user_data{1} + 1;
+    set(block_timer,'UserData', user_data);
+    
+    % display message     
+    message = [time,' - starting block ', num2str(user_data{1}), '. '];
+    disp(message);
+    
+elseif ismember(exec_count, post_times)        % if this event happens at the end of a block
+    user_data = get(block_timer, 'UserData');
+    
+    % display message 
+    message = [time, ' - TMS-EEG block ', num2str(user_data{1}), ' should be finished now. 5 mins until the beginning of block ', num2str(user_data{1} + 1), '.'];
+    disp(message);
+
+    
+    
+else                                            % if this event happens in the middle of a block or a break
+   % display message 
+    message = [time, ' - ', num2str(exec_count), ' minutes from the start.'];
+    disp(message);
+end
+
+end
+
+% timer cleanup function
+function timer_cleanup(block_timer,~)
+disp('Stopping the block timer. Well done!')
+end
 
 
 
