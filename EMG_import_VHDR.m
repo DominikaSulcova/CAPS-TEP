@@ -29,7 +29,6 @@ hdr=ft_read_header(filename);
 trg=ft_read_event(filename);
 
 %set header
-message_string{end+1}='Creating header';
 out_header.filetype='time_amplitude';
 out_header.name=filename;
 out_header.tags='';
@@ -42,8 +41,6 @@ out_header.xstep=1/hdr.Fs;
 out_header.ystep=1;
 out_header.zstep=1;
 
-%set chanlocs
-message_string{end+1}=['Importing ',num2str(hdr.nChans),' channel labels'];
 %dummy chanloc
 chanloc.labels='';
 chanloc.topo_enabled=0;
@@ -56,7 +53,6 @@ end;
 
 %set events
 numevents=size(trg,2);
-message_string{end+1}=['Importing ',num2str(numevents),' events'];
 %set events
 if numevents==0;
     out_header.events=[];
@@ -78,7 +74,6 @@ else
 end;
 
 %set data
-message_string{end+1}=['Importing data (',num2str(hdr.nSamples),' samples, ',num2str(hdr.nTrials),' trial(s))'];
 out_data=zeros(out_header.datasize);
 for chanpos=1:out_header.datasize(2);
     for epochpos=1:out_header.datasize(1);

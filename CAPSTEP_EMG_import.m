@@ -1,11 +1,18 @@
 %% IMPORT EMG DATA TO LETSWAVE
+% Written by Dominika for the GABA-AD project (2020)
 % 
+% 1) Loads raw EMG datasets saved in VHDR format
+% 2) Keeps only event markers eith the target eventcode (for MEGA --> 's1')
+%       - check for duplicate events (identical event latency) and discard
+%       repeats
+% 3) Saves in the current directory as .mat data + .lw6 header
 
 %% session info
 clear all; clc;
 
 % parameters
 timepoint = {'baseline' 't1' 't2' 't3' 't4' 't5' 't6'};
+eventcode = 's1';
 
 % enter dataset info
 prompt = {'Subject number:'};
@@ -35,8 +42,6 @@ EMG_code = uigetfile([path '\*.vhdr'], 'Select file name for this session');
 clear answer
 
 %% import MEGA datasets
-% import the datasets - blocks indicated by folders vector
-counter = 1;
 for a = 1:length(timepoint)
     % import the appropriate dataset
     filename = [input_folder '\' timepoint{a} '\' EMG_code];
@@ -49,9 +54,29 @@ for a = 1:length(timepoint)
     load('EMG_history_import.mat')
     EMG_history_import.configuration.parameters.filenames =  filename;
     header.history(1) =  EMG_history_import;
-      
+    
+    % keep only the events with target code 
+    for b = 1:length(header.events)
+        if strcmp(header.events(b).code, eventcode)
+            index(b) = true;
+        else
+            index(b) = false;
+        end
+    end
+    header.events = header.events(index);
+    
+    % remove repeated events (based on latency)
+    events_unique = unique(extractfield(header.events, 'latency'));
+    index_rep = [];
+    for c = 1:length(events_unique)
+        e = find(extractfield(header.events, 'latency') == events_unique(c));
+        index_rep(end + 1) = e(1);
+    end
+    header.events = header.events(index_rep);
+    
     % save the data and the header as letswave files
     header.name = dataset_name;
     save([dataset_name '.mat'], 'data');
     save([dataset_name '.lw6'], 'header');
 end
+clear a b c e events_unique index index_rep
