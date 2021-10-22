@@ -1,5 +1,5 @@
 %% IMPORT EMG DATA TO LETSWAVE
-% Written by Dominika for the GABA-AD project (2020)
+% Written by Dominika for the CAPS-TEP project (2020)
 % 
 % 1) Loads raw EMG datasets saved in VHDR format
 % 2) Keeps only event markers eith the target eventcode (for MEGA --> 's1')

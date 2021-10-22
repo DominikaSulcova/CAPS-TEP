@@ -1,5 +1,4 @@
 %% EMG DATA PROCESSING, MEP EXTRACTION
-% Written by Dominika for the CAPS-TEP project (2021)
 % 
 % ----- Discards MEP epochs with baseline activity ----- 
 % 1) Loops through the datset, in one loop:
@@ -111,8 +110,8 @@ for p = 1:length(participant)
                 subplot(3, 2, [1 2])
                 plot(x, data_visual, 'color', [0.45, 0.45, 0.45], 'linewidth', 1.5)                
                 sgtitle(['Subject ' participant{p} ' - ' session{s} ' - ' time{t} ' : CYCLE ' num2str(cycle)], 'fontsize', 18)
-                title(['Original dataset - average RMS ' num2str(avg_rms) ' µV'])
-                set(gca,'Fontsize',16); ylabel('amplitude (µV)');
+                title(['Original dataset - average RMS ' num2str(avg_rms) ' ï¿½V'])
+                set(gca,'Fontsize',16); ylabel('amplitude (ï¿½V)');
                 hold on
                               
                 % loop through trials
@@ -142,12 +141,12 @@ for p = 1:length(participant)
                 % add parameters to axes
                 subplot(3, 2, [3 4])
                 title(['Kept epochs: ' num2str(length(header.events) - length(discarded_pos))])
-                set(gca,'Fontsize',16); ylabel('amplitude (µV)');
+                set(gca,'Fontsize',16); ylabel('amplitude (ï¿½V)');
                 hold on
                 
                 subplot(3, 2, [5 6])
                 title(['Discarded epochs: ' num2str(length(discarded_pos))])
-                set(gca,'Fontsize',16); xlabel('time (s)'); ylabel('amplitude (µV)');
+                set(gca,'Fontsize',16); xlabel('time (s)'); ylabel('amplitude (ï¿½V)');
                 hold on
 
                 % ------------------ cycle automatically to 0 discarded epochs ------------------
@@ -174,7 +173,7 @@ for p = 1:length(participant)
                     subplot(3, 2, 3)
                     plot(x, data_visual_orig, 'color', [0, 0, 0], 'linewidth', 1.5)                       
                     title(['Original dataset: ' num2str(size(data_visual_orig, 1)) ' epochs'])
-                    set(gca,'Fontsize',14); ylabel('amplitude (µV)');
+                    set(gca,'Fontsize',14); ylabel('amplitude (ï¿½V)');
                     hold on  
                     
                     % plot filtered dataset
@@ -182,14 +181,14 @@ for p = 1:length(participant)
                     plot(x, data_visual, 'Color', [0, 0, 0], 'linewidth', 1.5)
                     xlim = get(gca,'xlim');                        
                     title(['RMS + SD: ' num2str(length(header.events)) ' epochs kept, ' num2str(cycle - 1) ' cycles performed'])
-                    set(gca,'Fontsize',14); ylabel('amplitude (µV)'); xlabel('time (s)');
+                    set(gca,'Fontsize',14); ylabel('amplitude (ï¿½V)'); xlabel('time (s)');
                     hold on
 
                     % add threshold 
                     subplot(3, 2, 5)
                     l(1) = line([-0.2, 0], [threshold, threshold], 'LineWidth', 1.5, 'Color', [0.99, 0.3, 0.2], 'LineStyle', '--');
                     l(2) = line([-0.2, 0], [-threshold, -threshold], 'LineWidth', 1.5, 'Color', [0.99, 0.3, 0.2], 'LineStyle', '--');
-                    text(xlim(1) + 0.005 , - threshold + 4 ,['threshold = ' num2str(threshold) ' µV'], 'Fontsize', 14, 'color', [0.99, 0.3, 0.2])
+                    text(xlim(1) + 0.005 , - threshold + 4 ,['threshold = ' num2str(threshold) ' ï¿½V'], 'Fontsize', 14, 'color', [0.99, 0.3, 0.2])
                     hold on
                     
                     % plot discarded epochs - RMS + SD
@@ -234,7 +233,7 @@ for p = 1:length(participant)
 %                         subplot(3, 2, [3 4])
 %                         plot(x, data_visual, 'Color', [0, 0, 0], 'LineWidth', 1)
 %                         ylim = get(gca,'ylim'); xlim = get(gca,'xlim');                        
-%                         text(xlim(1) + 0.005 , ylim(2) - 2 ,['Final average RMS: ' num2str(avg_rms) ' µV'], 'Fontsize', 16)
+%                         text(xlim(1) + 0.005 , ylim(2) - 2 ,['Final average RMS: ' num2str(avg_rms) ' ï¿½V'], 'Fontsize', 16)
 %                         title(['Kept epochs: ' num2str(length(header.events))])
 %                         set(gca,'Fontsize',16)
 %                         hold on
@@ -295,9 +294,9 @@ for p = 1:length(participant)
             % add parameters to axes
             final_rms = mean(rms(data_visual'));
             subplot(3, 2, [1 2])
-            set(gca,'Fontsize',14); ylabel('amplitude (µV)');  
+            set(gca,'Fontsize',14); ylabel('amplitude (ï¿½V)');  
             title(['Subject ' participant{p} ', ' session{s} ', ' time{t} ' - FINAL DATASET : ' num2str(length(header.events) - length(discarded_pos)) ' epochs kept, ' ...
-                num2str(length(discarded)) ' discarded - final average RMS ' num2str(final_rms) ' µV'], 'Fontsize', 18)            
+                num2str(length(discarded)) ' discarded - final average RMS ' num2str(final_rms) ' ï¿½V'], 'Fontsize', 18)            
             hold on
             
             subplot(3, 2, 6)
