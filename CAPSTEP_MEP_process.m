@@ -1,5 +1,5 @@
-%% DISCARD MEP EPOCHS WITH BASELINE ACTIVITY
-% Written by Dominika for the CAPS-TEP project
+%% EMG DATA PROCESSING, MEP EXTRACTION
+% Written by Dominika for the CAPS-TEP project (2021)
 % 
 % ----- Discards MEP epochs with baseline activity ----- 
 % 1) Loops through the datset, in one loop:
