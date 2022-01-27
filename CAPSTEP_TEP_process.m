@@ -1,4 +1,4 @@
-%% CAPSTEP: PROCESS EeG DATA
+%% CAPSTEP: PROCESS EEG DATA
 % Written by Dominika for the CAPS-TEP project (2021)
 
 % ----- Prepare data ----- 

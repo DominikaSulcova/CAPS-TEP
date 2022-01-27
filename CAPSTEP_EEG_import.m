@@ -1,11 +1,36 @@
-%% session info
+%% CAPSTEP: IMPORT EEG DATA
+% Written by Dominika for the CAPS-TEP project (2021)
+
+% 1) enter session info - automatized input
+%       - subject number
+%       - experimental condition: capsaicin X placebo
+%       - location of raw data
+%       - number of folders to import
+% 
+% 2) import MEGA datasets
+%       --> 'EEG subject condition timepoint(baseline/t1-6) block(1/2)'
+% 
+% 3) remove the first blind event 
+
+%% parameters
 clear all; clc;
 
-% parameters
+% protocol
 timepoint = {'baseline' 't1' 't2' 't3' 't4' 't5' 't6'}; 
 block = {'b1' 'b2'};
 
-% enter dataset info
+% choose the Git folder --> source of saved default files
+folder_git = uigetdir(pwd, 'Choose the Git folder');
+
+% choose the folder with processed data --> import destination
+path = 'E:\Data\CAPS-TEP - data';
+folder_output = uigetdir(path, 'Coose the output folder');
+clear path 
+
+%% 1) session info
+clear session_info folders
+
+% participant 
 prompt = {'Subject number:'};
 dlgtitle = 'Subject';
 dims = [1 35];
@@ -28,7 +53,8 @@ prefix = ['EEG ' session_info{1} ' ' session_info{2}];
 
 % choose the folder with raw data
 path = ['E:\Data\CAPS-TEP - data\Raw data\CAPS-TEP_' session_info{1}];
-input_folder = uigetdir(path);
+folder_input = uigetdir(path, 'Coose the input folder');
+clear path 
 
 % specify EEG block subfolders in the imput folder
 prompt = {'Admit following EEG blocks:'};
@@ -37,17 +63,19 @@ dims = [1 35];
 definput = {'[4:17]'};
 answer = cell2mat(inputdlg(prompt,dlgtitle,dims,definput));
 eval(['folders = ' answer ';']); 
-clear answer prompt dlgtitle dims definput             
+clear answer prompt dlgtitle dims definput   
 
+%% 2) import
+% load the history file
+load([folder_git '\EEG_history_import.mat'])
 
-%% import MEGA datasets
 % import the datasets - blocks indicated by folders vector
 counter = 1;
 for a = 1:length(folders)
     % import the appropriate dataset
-    [header, data] = EEG_import_MEGA(input_folder, folders(a));
+    [header, data] = EEG_import_MEGA(folder_input, folders(a));
                 
-    % create the name for the dataset
+    % set up the name + update counter
     if mod(a, 2) == 1
         dataset_name = [prefix ' ' timepoint{counter}  ' ' block{1}];
     else
@@ -56,21 +84,21 @@ for a = 1:length(folders)
     end
     
     % create the first letswave history entry
-    load('EEG_history_import.mat')
-    EEG_history_import.configuration.parameters.input_folder  = input_folder;
+    EEG_history_import.configuration.parameters.input_folder  = folder_input;
     EEG_history_import.configuration.parameters.session_number  = a;   
     header.history(1) =  EEG_history_import;
     
     % save the data and the header as letswave files
     header.name = dataset_name;
-    save([dataset_name '.mat'], 'data');
+    save([folder_output '\' dataset_name '.mat'], 'data');
     save([dataset_name '.lw6'], 'header');
 end
+clear EEG_history_import counter a header data dataset_name
 
-%% get rid of the first blind event 
+%% 3) blind event removal 
 counter = 1;
 for b = 1:length(timepoint)*2 
-    % choose the dataset name
+    % set up the name + update counter
     if mod(b, 2) == 1
         dataset_name = [prefix ' ' timepoint{counter}  ' ' block{1}];
     else
@@ -118,3 +146,4 @@ for b = 1:length(timepoint)*2
     % save the header
     save([dataset_name '.lw6'], 'header');    
 end 
+clear b counter dataset_name T sortedT T_crop message_1 message_2 blind_event
