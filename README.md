@@ -4,24 +4,24 @@ Project for fun :)
 ------------------------------------------------------------
 Experimental protocol
 ------------------------------------------------------------
-15 (16) young healthy volunteers
+20 young healthy volunteers\\*
 Datasets for each subject: corresponding EEG and EMG epochs
-- 2 sessions --> topical capsaicin (2% solution) OR vehicle (ethanol) applied in a patch over FDI muscle
-- 7 timepoint per session: baseline + 6 recordings every 15 mins following the patch application
+- 2 sessions \rightarrow topical capsaicin (2% solution) OR vehicle (ethanol) applied in a patch over FDI muscle
+- 7 timepoints per session: baseline + 6 recordings every 15 mins following the patch application
 
-TMS:
+**TMS**
 - MagVenture MagPro X100, biphasic sin pulse
 - 80 stimuli per timepoint (split in 2 blocks per 40 stims)
 - over M1 - FDI hotspot
 - single pulse TMS of 120 %rMT 
 - ISI randomly 6 - 8 s
 
-EEG:
+**EEG**
 - NeurOne EEG system (MEGA/Bittium)
 - 32 (30) electrodes – referenced to mastoids (ground an extra electrode on the front)
 - SR 20 kHz
 
-EMG:
+**EMG**
 - Visor2 MobiEMG amplifier
 - SR 1024 Hz
 
@@ -35,7 +35,7 @@ Experimental session
 - CAPSTEP_initialize_logfile.m
 
 
-EEG --> TEPs 
+EEG \rightarrow TEPs 
 ------------------------------------------------------------
 **EEG data preprocessing:**
 - CAPSTEP_EEG_import.m
@@ -51,7 +51,7 @@ EEG --> TEPs
 - CAPSTEP_TEP_process.m
 
 
-EMG -->  MEPs
+EMG \rightarrow MEPs
 ------------------------------------------------------------
 **EMG data preprocessing:**
 - CAPSTEP_EMG_import.m
