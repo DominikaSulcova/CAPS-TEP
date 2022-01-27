@@ -1,3 +1,4 @@
+%% CAPS-TEP: merge blocs into timepoints 
 clear all
 clc
 

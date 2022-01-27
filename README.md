@@ -37,22 +37,26 @@ Experimental session
 
 EEG --> TEPs 
 ------------------------------------------------------------
-preprocessing:
+**EEG data preprocessing:**
 - CAPSTEP_EEG_import.m
 - EEG_import_MEGA.m
 - EEG_history_import.mat
+- CAPSTEP_EEG_preprocess.lwscript
 - CAPSTEP_EEG_merge.m
+- CAPSTEP_EEG_ica_timecourse.lwscript
+- CAPSTEP_EEG_ica_FFT.lwscript
+- CAPSTEP_EEG_filter.lwscript
 
-TEP analysis:
+**TEP analysis:**
+- CAPSTEP_TEP_process.m
 
 
 EMG -->  MEPs
 ------------------------------------------------------------
-preprocessing:
+**EMG data preprocessing:**
 - CAPSTEP_EMG_import.m
 - EMG_import_VHDR.m
 - EMG_history_import.mat
-- CAPSTEP_EMG_baseline.m
 
-MEP analysis:
-
+**MEP analysis:**
+- CAPSTEP_MEP_process.m
