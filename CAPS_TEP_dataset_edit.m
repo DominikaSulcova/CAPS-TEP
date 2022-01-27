@@ -2,25 +2,33 @@
 clear all, clc
 
 % parameters
-participant = {'08'};
+participant = {'03' '04' '05' '07' '08'};
 session = {'caps' 'ctrl'};
 time = {'baseline' 't1' 't2' 't3' 't4' 't5' 't6'};
-prefix = 'dc reref ds art-sup ep dc EEG';
+block = {'b1' 'b2'};
 event_name = 'Stimulation';
 
-
-% rename loop 
+% loop through datasets
 for p = 1:length(participant)
     for s = 1:length(session)
         for t = 1:length(time)
-            load([prefix ' ' participant{p} ' ' session{s} ' ' time{t} '.lw6'], '-mat')
-            for e = 1:length(header.events)
-                header.events(e).code = event_name;
+            for b = 1:length(block)
+                % load the header
+                load(['EEG ' participant{p} ' ' session{s} ' ' time{t} ' ' block{b} '.lw6'], '-mat')
+                
+                % replace event code
+                for e = 1:length(header.events)
+                    header.events(e).code = event_name;
+                end
+                
+                % save to letswave
+                save(['EEG ' participant{p} ' ' session{s} ' ' time{t} ' ' block{b} '.lw6'], 'header')
             end
-            save([prefix ' ' participant{p} ' ' session{s} ' ' time{t} '.lw6'], 'header')
         end
     end
 end
+clear p s t 
+
 %% rename datasets
 clear all, clc
 
