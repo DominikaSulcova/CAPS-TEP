@@ -4,9 +4,8 @@ Project for fun :)
 ------------------------------------------------------------
 Experimental protocol
 ------------------------------------------------------------
-20 young healthy volunteers\\*
-Datasets for each subject: corresponding EEG and EMG epochs
-- 2 sessions \rightarrow topical capsaicin (2% solution) OR vehicle (ethanol) applied in a patch over FDI muscle
+20 young healthy volunteers  Datasets for each subject: corresponding EEG and EMG epochs
+- 2 sessions: topical capsaicin (2% solution) OR vehicle (ethanol) applied in a patch over FDI muscle
 - 7 timepoints per session: baseline + 6 recordings every 15 mins following the patch application
 
 **TMS**
@@ -35,7 +34,7 @@ Experimental session
 - CAPSTEP_initialize_logfile.m
 
 
-EEG \rightarrow TEPs 
+EEG - TEPs 
 ------------------------------------------------------------
 **EEG data preprocessing:**
 - CAPSTEP_EEG_import.m
@@ -51,7 +50,7 @@ EEG \rightarrow TEPs
 - CAPSTEP_TEP_process.m
 
 
-EMG \rightarrow MEPs
+EMG - MEPs
 ------------------------------------------------------------
 **EMG data preprocessing:**
 - CAPSTEP_EMG_import.m
