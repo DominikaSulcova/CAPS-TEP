@@ -27,7 +27,7 @@ clear a b c
 participant = {'12' '13'};
 treatment = {'caps' 'ctrl'};
 time = {'baseline' 't1' 't2' 't3' 't4' 't5' 't6'};
-prefix = 'crop bandpass notch prefilt prea dc reref ds art-sup ep dc EEG'; 
+prefix = 'ds art-sup dc ep reref chan-select EEG'; 
 eventcode = 'Stimulation';
 
 % a = 1; b = 1; c = 1;
