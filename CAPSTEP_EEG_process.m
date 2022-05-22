@@ -33,30 +33,28 @@
 %     - bandpass Butterworth filter [0.1 80]Hz
 %     - notch FFT filter 50Hz
 %     - signal cropped to [-0.75 0.75]s
-% 8) second ICA matrix
+% 8) visual inspection
+%     --> CAPSTEP info: encode removed epochs 
+% 9) second ICA matrix
 %     - rectangular matrix --> number of components for each subject stored
 %     in a vector 'components'
-% 9) second ICA
-%     --> CAPSTEP info: encode removed ICs  
-% 10) visual inspection
-%     --> CAPSTEP info: encode removed epochs 
-% 11) target channel
-%     - create a new channel by averaging 3 closest electrodes
-% 12) processing block 3
-%     - baseline correction: subtraction of baseline segment [-0.2 -0.005]s
+% 10) second ICA
+%     --> CAPSTEP info: encode removed ICs   
+% 11) processing block 3
+%     - baseline correction
 %     - average across epochs
-
 
 %% parameters
 clear all
 clc
 
 % choose the Git folder --> source of saved default files
-folder_git = uigetdir(pwd, 'Choose the Git folder');
+path = 'C:\Users\sulcova\Desktop\GitHub\CAPS-TEP';
+folder_git = uigetdir(path, 'Choose the Git folder');
 
 % choose the folder with processed data 
 path = 'E:\Data\CAPS-TEP - data\Processed data';
-folder_output = uigetdir(path, 'Coose the output folder');
+folder_input = uigetdir(path, 'Coose the input folder');
 
 % choose the results folder  
 path = 'E:\UCL\O365G-NOCIONS - CAPS-TEP - CAPS-TEP\Results';
@@ -68,10 +66,12 @@ folder_logfiles = uigetdir(path, 'Coose the logfile folder');
 clear path 
 
 % dataset
+participant = [1:10, 12:14, 16:18, 20, 22:24];
 condition = {'caps' 'ctrl'};
 time = {'baseline' 't1' 't2' 't3' 't4' 't5' 't6'};
 block = {'b1' 'b2'};
 prefix = 'EEG';
+electrodes = {'Fp1','Fp2','F3','F4','C3','C4','P3','P4','O1','O2','F7','F8','T7','T8','P7','P8','Fz','Cz','Pz','Iz','FC1','FC2','CP1','CP2','FC5','FC6','CP5','CP6','M1','M2','C1','C2'};
 
 % output
 output_file = [folder_results '\CAPSTEP_info.mat' ];
@@ -123,7 +123,6 @@ save(output_file, 'CAPSTEP_info');
 %% 2) processing block 1
 % ----- section input -----
 suffix = {'reref' 'chan-select' 'reref' 'ep' 'dc' 'art-sup' 'ds'};
-electrodes = {'Fp1','Fp2','F3','F4','C3','C4','P3','P4','O1','O2','F7','F8','T7','T8','P7','P8','Fz','Cz','Pz','Iz','FC1','FC2','CP1','CP2','FC5','FC6','CP5','CP6','M1','M2','C1','C2'};
 % participant = [];
 % -------------------------
 % loop through datasets
@@ -140,7 +139,7 @@ for p = 1:length(participant)
             for b = 1:length(block)
                 % get the dataset
                 disp([subject ' ' condition{c} ' ' time{t} ' ' block{b}])
-                dataset = [folder_output '\' prefix ' ' subject ' ' condition{c} ' ' time{t} ' ' block{b} '.lw6'];
+                dataset = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{t} ' ' block{b} '.lw6'];
                 option = struct('filename', dataset);
                 lwdata = FLW_load.get_lwdata(option);
 
@@ -216,7 +215,7 @@ for p = 1:length(participant)
         for t = 1:length(time)
             % load the dataset
             for b = 1:length(block)
-                dataset{b} = [folder_output '\' prefix ' ' subject ' ' condition{c} ' ' time{t} ' ' block{b} '.lw6'];
+                dataset{b} = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{t} ' ' block{b} '.lw6'];
             end
             option = struct('filename', {dataset});
             lwdataset = FLW_load.get_lwdataset(option);
@@ -287,7 +286,7 @@ for p = 1:length(participant)
         kept_ID = {};
         for d = 1:size(removed_ID, 1)
             % load the dataset
-            dataset = [folder_output '\' prefix ' ' subject ' ' condition{c} ' ' time{removed_ID{d, 1}} '.lw6'];
+            dataset = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{removed_ID{d, 1}} '.lw6'];
             option = struct('filename', dataset);
             lwdata = FLW_load.get_lwdata(option);
             
@@ -334,7 +333,7 @@ for p = 1:length(participant)
         
         % load the dataset
         for t = 1:length(time)
-            dataset{t} = [folder_output '\' prefix ' ' subject ' ' condition{c} ' ' time{t} '.lw6'];
+            dataset{t} = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{t} '.lw6'];
         end
         option = struct('filename', {dataset});
         lwdataset = FLW_load.get_lwdataset(option);
@@ -370,7 +369,7 @@ for p = 1:length(participant)
         disp([subject ' ' condition{c}])
         
         % load one of the datasets
-        dataset = [folder_output '\sp_filter ' prefix ' ' subject ' ' condition{c} ' ' time{1} '.lw6'];
+        dataset = [folder_input '\sp_filter ' prefix ' ' subject ' ' condition{c} ' ' time{1} '.lw6'];
         option = struct('filename', dataset);
         lwdata = FLW_load.get_lwdata(option);
             
@@ -387,7 +386,7 @@ for p = 1:length(participant)
         logfile_entry('preICA', filename, 'components', components)    
     end
 end
-clear p c subject filename dataset option lwdata t
+clear p c subject filename dataset option lwdata 
 disp('Finished! Ad Hoc?!')
 
 % update prefix
@@ -417,7 +416,7 @@ for p = 1:length(participant)
         for t = 1:length(time)     
             % get the dataset
             disp([subject ' ' condition{c} ' ' time{t}])
-            dataset = [folder_output '\' prefix ' ' subject ' ' condition{c} ' ' time{t} '.lw6'];
+            dataset = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{t} '.lw6'];
             option = struct('filename', dataset);
             lwdata = FLW_load.get_lwdata(option);
 
@@ -453,10 +452,61 @@ for s = 1:length(suffix)
 end
 clear s suffix 
 
-%% 8) second ICA matrix
+%% 8) visual inspection 
+% ----- section input -----
+suffix = 'visual';
+% participant = [];
+% -------------------------
+% load output file
+load(output_file);
+
+% update prefix
+prefix = [suffix ' ' prefix];
+clear suffix
+
+% loop through datasets
+for p = 1:length(participant)
+    for c = 1:length(condition)
+        % determine the subject
+        if participant(p) < 10
+           subject = ['0' num2str(participant(p))];
+        else
+           subject = num2str(participant(p)); 
+        end
+        disp([subject ' ' condition{c}])
+        
+        for t = 1:length(time)
+            % load the dataset
+            dataset = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{t} '.lw6'];
+            option = struct('filename', dataset);
+            lwdata = FLW_load.get_lwdata(option);
+            
+            % extract numbers of removed epochs
+            epochs = lwdata.header.history(length(lwdata.header.history)).configuration.parameters.rejected_epochs;  
+            disp([num2str(length(epochs)) ' epochs removed'])
+            
+            % extract final number of retained epochs
+            n_epochs = lwdata.header.datasize(1);  
+            disp([num2str(n_epochs) ' epochs retained'])
+        
+            % encode to the output structure        
+            statement = ['CAPSTEP_info(participant(p)).epochs_removed.' condition{c} ' = epochs;'];
+            eval(statement)
+            statement = ['CAPSTEP_info(participant(p)).epochs_n.' condition{c} ' = n_epochs;'];
+            eval(statement)   
+        end
+    end
+end
+clear p c t subject filename dataset option lwdata epochs n_epochs
+disp('Finished! Beer?!')
+
+% save the output file
+save(output_file, 'CAPSTEP_info');
+
+%% 9) second ICA matrix
 % ----- section input -----
 suffix = 'ica';
-participant = [1:10, 12:14, 16:18, 20, 22:24];
+% participant = [];
 % -------------------------
 % loop through datasets
 for p = 1:length(participant)
@@ -471,7 +521,7 @@ for p = 1:length(participant)
         % load the dataset
         disp([subject ' ' condition{c}])
         for t = 1:length(time)
-            dataset{t} = [folder_output '\' prefix ' ' subject ' ' condition{c} ' ' time{t} '.lw6'];
+            dataset{t} = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{t} '.lw6'];
         end
         option = struct('filename', {dataset});
         lwdataset = FLW_load.get_lwdataset(option);
@@ -498,69 +548,207 @@ disp('Finished! Ad Hoc?!')
 prefix = [suffix ' ' prefix];
 clear suffix
 
-%% 9) second ICA
+%% 10) second ICA
 % ----- section input -----
-suffix = 'icafilt';
+suffix = 'icfilt';
 % participant = [];
 % -------------------------
 % load output file
 load(output_file);
-
-% loop through datasets
-
-% update prefix
-prefix = [suffix ' ' prefix];
-
-% save the output file
-save(output_file, 'CAPSTEP_info');
-
-%% 10) visual inspection
-% ----- section input -----
-suffix = 'visual';
-% participant = [];
-% -------------------------
-% load output file
-load(output_file);
-
-% loop through datasets
 
 % update prefix
 prefix = [suffix ' ' prefix];
 clear suffix
 
-% save the output file
-save(output_file, 'CAPSTEP_info');
-
-%% 11) target channel
-% ----- section input -----
-% participant = [];
-% -------------------------
-% load output file
-load(output_file);
-
 % loop through datasets
+for p = 1:length(participant)
+    % determine the subject
+    if participant(p) < 10
+       subject = ['0' num2str(participant(p))];
+    else
+       subject = num2str(participant(p)); 
+    end
+    
+    % loop through conditions
+    for c = 1:length(condition)
+        disp([subject ' ' condition{c}])
+        
+        % load one of the datasets
+        dataset = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{1} '.lw6'];
+        option = struct('filename', dataset);
+        lwdata = FLW_load.get_lwdata(option);
+        
+        % extract the number of computed components
+        components_n = lwdata.header.history(length(lwdata.header.history) - 1).configuration.parameters.num_ICs;  
+            
+        % extract numbers of removed components
+        components_removed = 1:components_n;
+        components_kept = lwdata.header.history(length(lwdata.header.history)).configuration.parameters.IC_list;  
+        components_removed = components_removed(~ismember(components_removed, components_kept));
+        disp([num2str(length(components_removed)) ' components removed: ' num2str(components_removed)])
+        
+        % encode to the output structure        
+        statement = ['CAPSTEP_info(participant(p)).ICA.' condition{c} ' = components_removed;'];
+        eval(statement)
+    end
+end
+clear p c subject filename dataset option lwdata components_n components_removed components_kept
+disp('Finished! Ad Hoc?!')
 
 % save the output file
 save(output_file, 'CAPSTEP_info');
 
-%% 12) processing block 3
+%% 11) processing block 3
 % ----- section input -----
 suffix = {'bl' 'avg'};
+baseline = [-0.2 -0.005];
 % participant = [];
 % -------------------------
 % loop through datasets
+for p = 1:length(participant)
+    for c = 1:length(condition)
+        % determine the subject
+        if participant(p) < 10
+           subject = ['0' num2str(participant(p))];
+        else
+           subject = num2str(participant(p)); 
+        end
+        
+        for t = 1:length(time)     
+            % get the dataset
+            disp([subject ' ' condition{c} ' ' time{t}])
+            dataset = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{t} '.lw6'];
+            option = struct('filename', dataset);
+            lwdata = FLW_load.get_lwdata(option);
+
+            % subtract baseline
+            disp('Correcting to baseline...')
+            option = struct('operation', 'substract', 'xstart', baseline(1), 'xend', baseline(2), ...
+                'suffix', suffix{1}, 'is_save', 0);
+            lwdata = FLW_baseline.get_lwdata(lwdata,option);
+
+            % average
+            disp('Averaging...')
+            option = struct('operation', 'average', 'suffix', suffix{2}, 'is_save', 1);
+            lwdata = FLW_average_epochs.get_lwdata(lwdata,option);
+        end        
+        % update the logfile
+        filename = [folder_logfiles '\CAPS-TEP_' subject '_' condition{c} '.txt'];
+        logfile_entry('block 3', filename)
+    end
+end
+clear p c subject t dataset option lwdata bandpass crop_window
+disp('Finished! Sendwich?')
 
 % update prefix
 for s = 1:length(suffix)
     prefix = [suffix{s} ' ' prefix];
 end
-clear s
+clear s suffix 
+
+%% 12) correct sides and group average
+% ----- section input -----
+suffix = 'chanflip';
+% participant = [];
+% -------------------------
+% flip left if stimulated on the right 
+for p = 1:length(participant)
+    % determine the filename
+    if participant(p) < 10
+       subject = ['0' num2str(participant(p))];
+    else
+       subject = num2str(participant(p)); 
+    end
+    
+    % loop through datasets
+    for c = 1:length(condition)
+    end
+end
+clear p c subject filename fileID nline EMG_ID statement
+
+% update prefix
+prefix = [suffix ' ' prefix];
+clear suffix
+
+% average across subjects by condition/timepoint
+for c = 1:length(condition)
+    for t = 1:length(time)  
+        % load the dataset
+        for p = 1:length(participant)
+            % determine the subject
+            if participant(p) < 10
+               subject = ['0' num2str(participant(p))];
+            else
+               subject = num2str(participant(p)); 
+            end
+            
+            % load
+            dataset{p} = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{t} '.lw6'];
+        end
+        option = struct('filename', {dataset});
+        lwdataset = FLW_load.get_lwdataset(option);
+        
+        % merge epochs 
+        option = struct('type', 'epoch', 'suffix', '', 'is_save', 0);
+        lwdata = FLW_merge.get_lwdata(lwdataset, option);
+            
+        % rename, save
+        lwdata.header.name = ['merged ' condition{c} ' ' time{t}];
+        CLW_save(lwdata) 
+    end
+end
+clear p c t subject dataset option lwdata lwdataset
+
+%% 13) export for Ragu
+% ----- section input -----
+time_window = [-0.05, 0.3];
+% participant = [];
+% -------------------------
+% calculate crop limits
+load([prefix ' 01 caps baseline.lw6'], '-mat')                    
+x_start = (time_window(1) - header.xstart)/header.xstep;
+x_end = (time_window(2) - header.xstart)/header.xstep;
+
+% write text files for Ragu --> uncorrected ppTMS TEPs
+for c = 1:length(condition)
+    for t = 1:length(time)
+        for p = 1:length(participant)
+            % determine the subject
+            if participant(p) < 10
+               subject = ['0' num2str(participant(p))];
+            else
+               subject = num2str(participant(p)); 
+            end
+
+            % load the data
+            name_old = [prefix ' ' subject ' ' condition{c} ' ' time{t} '.mat'];
+            load(name_old)
+            data = squeeze(data(:, 1:30, :, :, :, x_start:x_end))';
+
+            % save as .csv               
+            name = ['CAPSTEP_' subject '_' condition{c} '_' time{t} '.csv']; 
+            writematrix(data, [folder_results '\CAPSTEP_TEP_export\' name])
+        end
+    end
+end
+clear c t p data subject name_old data x_start x_end name     
+
+% create the montage file
+name = [folder_results '\CAPSTEP_TEP_export\CAPSTEP_montage.xyz'];
+fileID = fopen(name, 'a');
+fprintf(fileID, '30\r\n');
+for a = 1:30
+    fprintf(fileID, '%.4f %.4f %.4f %s\r\n', ...
+        header.chanlocs(a).X, header.chanlocs(a).Y, header.chanlocs(a).Z, header.chanlocs(a).labels);
+end
+fclose(fileID)
+clear name fileID a header       
 
 %% functions
 function nline = getline(fileID, indice)
     tline = fgetl(fileID);
     nline = 1;
-    while ~strcmp(tline, indice)
+    while ~all(ismember(tline, indice))
         tline = fgetl(fileID);
         nline = nline + 1;
     end
@@ -665,16 +853,35 @@ time = {'baseline' 't1' 't2' 't3' 't4' 't5' 't6'};
             fprintf(fileID, '\r\n');
             fclose(fileID);
             
-        case 'block 2'
+        case 'visual'
             fileID = fopen(filename, 'a');
-            fprintf(fileID, '6	frequency filters applied\r\n');
-            fprintf(fileID, '		- FFT notch filter --> 50 Hz, width 2 + slope 2\r\n');
-            fprintf(fileID, '		- Butterworth bandpass filter --> [0.1 80]Hz, 4th order\r\n');
-            fprintf(fileID, '	--> file prefix: bandpass notch\r\n');
+            fprintf(fileID, '	--> file prefix: visual\r\n');
             fprintf(fileID, '\r\n');
-            fprintf(fileID, '7 	signal cropped to get rid of edge artifacts\r\n');
-            fprintf(fileID, '		- [-0.75 0.75]s\r\n');
-            fprintf(fileID, '	--> file prefix: crop\r\n');
+            fclose(fileID);
+            
+        case 'ICA'
+            if ~isempty(varargin)
+                a = find(strcmpi(varargin, 'components'));
+                if ~isempty(a)
+                    components = varargin{a + 1};
+                end
+            end
+            
+            fileID = fopen(filename, 'a');
+            fprintf(fileID, ['9	second ICA was computed to get rid of all remaining artifacts (' ' independent components)\r\n']);
+            fprintf(fileID, '		- squared matrix --> 30 ICs\r\n');
+            fprintf(fileID, '		- removed component(s): IC %s\r\n', num2str(components));
+            fprintf(fileID, '	--> file prefix: prefilt prea\r\n');
+            fprintf(fileID, '\r\n');
+            fclose(fileID);
+            
+        case 'block 3'
+            fileID = fopen(filename, 'a');
+            fprintf(fileID, '10 baseline corrected - subtracted mean of [-0.2 -0.005]s\r\n');
+            fprintf(fileID, '   --> file prefix: bl\r\n');
+            fprintf(fileID, '\r\n');
+            fprintf(fileID, '11 signal was averaged across epochs\r\n');
+            fprintf(fileID, '	--> file prefix: avg\r\n');
             fprintf(fileID, '\r\n');
             fclose(fileID);
     end
