@@ -2,7 +2,7 @@
 % Written by Dominika for the CAPS-TEP project (2020)
 % 
 % 1) Loads raw EMG datasets saved in VHDR format
-% 2) Keeps only event markers eith the target eventcode (for MEGA --> 's1')
+% 2) Keeps only event markers with the target eventcode (for MEGA --> 's1')
 %       - check for duplicate events (identical event latency) and discard
 %       repeats
 % 3) Saves in the current directory as .mat data + .lw6 header
@@ -41,6 +41,12 @@ input_folder = uigetdir(path);
 EMG_code = uigetfile([path '\*.vhdr'], 'Select file name for this session');
 clear answer
 
+% choose the Git folder --> source of saved default files
+path = 'C:\Users\sulcova\Desktop\GitHub\CAPS-TEP';
+folder_git = uigetdir(path, 'Choose the Git folder');
+clear path
+% folder_git = 'C:\Users\sulcova\Desktop\GitHub\CAPS-TEP';
+
 %% import MEGA datasets
 for a = 1:length(timepoint)
     % import the appropriate dataset
@@ -51,7 +57,7 @@ for a = 1:length(timepoint)
     dataset_name = [prefix ' ' timepoint{a}];
 
     % create the first history entry
-    load('EMG_history_import.mat')
+    load([folder_git '\EMG_history_import.mat'])
     EMG_history_import.configuration.parameters.filenames =  filename;
     header.history(1) =  EMG_history_import;
     

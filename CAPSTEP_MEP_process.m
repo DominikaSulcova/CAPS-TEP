@@ -31,14 +31,28 @@
 clear all
 clc
 
+% choose the Git folder --> source of saved default files
+path = 'C:\Users\sulcova\Desktop\GitHub\CAPS-TEP';
+folder_git = uigetdir(path, 'Choose the Git folder');
+
+% choose the folder with processed data 
+path = 'E:\Data\CAPS-TEP - data\Processed data';
+folder_input = uigetdir(path, 'Coose the input folder');
+
+% choose the results and figures folder  
+path = 'E:\UCL\O365G-NOCIONS - CAPS-TEP - CAPS-TEP\Results';
+folder_results = uigetdir(path, 'Coose the results folder');
+folder_figures = [folder_results '\CAPSTEP_MEP_figures'];
+output_file = [folder_results '\CAPSTEP_output'];
+
 % dataset
-participant = {'01' '02' '03' '04' '05' '06' '07' '08' '09' '10' '12' '13' '14' '16' '17'};
-session = {'ctrl' 'caps'};
+participant = {'01' '02' '03' '04' '05' '06' '07' '08' '09' '10' '12' '13' '14' '16' '17' '18' '20' '22' '23' '24'};
+session = {'caps' 'ctrl'};
 time = {'baseline' 't1' 't2' 't3' 't4' 't5' 't6'};
 prefix_old = 'dc ep EMG'; 
 prefix_1 = 'visual';
 prefix_2 = 'nozero';
-output_name = 'CAPSTEP_MEP';
+output_name = 'CAPSTEP_MEP_2';
 
 % filter
 baseline = -0.2;
@@ -308,8 +322,8 @@ for p = 1:length(participant)
                                             
             %% 3) save outcome variables           
             % number final epochs
-            for s = 1:header.datasize(1)
-                header.events(s).epoch = s;
+            for h = 1:header.datasize(1)
+                header.events(h).epoch = h;
             end
             
             % modify and save header
@@ -337,7 +351,8 @@ for p = 1:length(participant)
             
             % save and close the figure
             figure_name = [prefix_1 '_' participant{p} '_' session{s} '_' time{t}];
-            savefig(fig, [figure_name '.fig'])
+            savefig([folder_figures '\' figure_name '.fig'])
+            saveas(fig, [folder_figures '\' figure_name '.png'])
             close(fig)
 
             % update the counter
@@ -432,19 +447,24 @@ MEP.amplitude_zero = amplitudes.amp_zero;
 MEP.epochs_nozero = amplitudes.nozero;
 MEP.amplitude_nozero = amplitudes.amp_nozero;
 
-% save output table
-save([output_name '.mat'], 'MEP')
+% append output table to the general MATLAB file
+CAPSTEP_MEP = MEP;
+save(output_file, 'CAPSTEP_MEP', '-append');
 clear amplitudes
 
 %% 6) VISUALIZATION per session - not normalized 
-cmap = {'summer' 'autumn'};
+% load data
+load(output_file, 'CAPSTEP_MEP')
+
+% plot
+cmap = {'autumn' 'winter'};
 for s = 1:length(session)
     % choose the data
     data_visual = [];
     for t = 1:length(time)
-        rows = (categorical(MEP.session) == session{s} & ...
-            categorical(MEP.timepoint) == time{t});
-        data_i = MEP.amplitude_zero(rows);
+        rows = (categorical(CAPSTEP_MEP.session) == session{s} & ...
+            categorical(CAPSTEP_MEP.timepoint) == time{t});
+        data_i = CAPSTEP_MEP.amplitude_zero(rows);
         data_visual = cat(2, data_visual, data_i);
     end
     
@@ -454,7 +474,8 @@ for s = 1:length(session)
     hold on
     
     % prepare colours
-    statement = ['colormap ' cmap{s}]; eval(statement)
+    statement = ['colormap ' cmap{s}]; 
+    eval(statement)
     C = colormap; 
     C = C(1 : floor(length(C)/length(participant)) : length(C), :);
     
@@ -476,15 +497,15 @@ for s = 1:length(session)
     
     % add parameters
     figure_title = ['MEP amplitude - ' session{s}];
-    figure_name = ['CAPSTEP_MEP_' session{s}];
+    figure_name = ['CAPSTEP_MEP_' session{s} '_raw'];
     set(gca, 'xtick', 1:length(time), 'xticklabel', time)
     set(gca, 'Fontsize', 14)
     title(figure_title, 'FontWeight', 'bold', 'FontSize', 16)
     xlabel('timepoint'); ylabel('MEP (\muV)');
     
     % save the figure       
-    savefig([figure_name '.fig'])
-    saveas(fig, [figure_name '.png'])
+    savefig([folder_figures '\' figure_name '.fig'])
+    saveas(fig, [folder_figures '\' figure_name '.png'])
     
     % update the counter
     figure_counter = figure_counter + 1;    
@@ -493,7 +514,6 @@ clear s t p b fig pline scat statement C figure_title figure_name cmap rows data
 
 %% 7) VISUALIZATION per session - normalized 
 % calculate normalized amplitudes
-session = session([2 1]);
 amp_norm = [];
 for p = 1:length(participant)
     for s = 1:length(session)
@@ -503,16 +523,16 @@ for p = 1:length(participant)
                 amp_norm(end + 1) = 100; 
             else
                 % current MEP
-                rows = (categorical(MEP.subject) == participant{p} & ...
-                    categorical(MEP.session) == session{s} & ...
-                    categorical(MEP.timepoint) == time{t});
-                data_i = MEP.amplitude_zero(rows);
+                rows = (categorical(CAPSTEP_MEP.subject) == participant{p} & ...
+                    categorical(CAPSTEP_MEP.session) == session{s} & ...
+                    categorical(CAPSTEP_MEP.timepoint) == time{t});
+                data_i = CAPSTEP_MEP.amplitude_zero(rows);
                 
                 % baseline MEP
-                rows = (categorical(MEP.subject) == participant{p} & ...
-                    categorical(MEP.session) == session{s} & ...
-                    categorical(MEP.timepoint) == time{1});
-                data_bl = MEP.amplitude_zero(rows);
+                rows = (categorical(CAPSTEP_MEP.subject) == participant{p} & ...
+                    categorical(CAPSTEP_MEP.session) == session{s} & ...
+                    categorical(CAPSTEP_MEP.timepoint) == time{1});
+                data_bl = CAPSTEP_MEP.amplitude_zero(rows);
                 
                 % normalize in % of baseline
                 amp_norm(end + 1) = data_i / data_bl * 100;
@@ -520,23 +540,22 @@ for p = 1:length(participant)
         end
     end
 end
-session = session([2 1]);
 clear p s t rows data_i data_bl
 
 % append the amplitudes to the result table
-MEP.amplitude_norm = amp_norm';
-save([output_name '.mat'], 'MEP')
+CAPSTEP_MEP.amplitude_norm = amp_norm';
+save(output_file, 'CAPSTEP_MEP', '-append');
 clear amp_norm
 
 % plot 
-cmap = {'summer' 'autumn'};
+cmap = {'autumn' 'winter'};
 for s = 1:length(session)
     % choose the data
     data_visual = [];
     for t = 1:length(time)
-        rows = (categorical(MEP.session) == session{s} & ...
-            categorical(MEP.timepoint) == time{t});
-        data_i = MEP.amplitude_norm(rows);
+        rows = (categorical(CAPSTEP_MEP.session) == session{s} & ...
+            categorical(CAPSTEP_MEP.timepoint) == time{t});
+        data_i = CAPSTEP_MEP.amplitude_norm(rows);
         data_visual = cat(2, data_visual, data_i);
     end       
 
@@ -574,8 +593,8 @@ for s = 1:length(session)
     xlabel('timepoint'); ylabel('MEP (% baseline)');
     
     % save the figure       
-    savefig([figure_name '.fig'])
-    saveas(fig, [figure_name '.png'])
+    savefig([folder_figures '\' figure_name '.fig'])
+    saveas(fig, [folder_figures '\' figure_name '.png'])
     
     % update the counter
     figure_counter = figure_counter + 1;    
@@ -587,13 +606,13 @@ clear s t p b fig pline scat statement C figure_title figure_name cmap rows data
 data_visual = [];
 for s = 1:length(session)
     for t = 1:length(time)
-        rows = (categorical(MEP.session) == session{s} & ...
-            categorical(MEP.timepoint) == time{t});
-        data_i = MEP.amplitude_norm(rows);
+        rows = (categorical(CAPSTEP_MEP.session) == session{s} & ...
+            categorical(CAPSTEP_MEP.timepoint) == time{t});
+        data_i = CAPSTEP_MEP.amplitude_norm(rows);
         data_visual = cat(2, data_visual, data_i);
     end
 end
-data_visual = data_visual([1:8, 10:11, 13:15], :);
+data_visual = data_visual([1:8, 10:11, 13:18, 20], :);
 
 % launch the figure
 fig = figure(figure_counter); 
@@ -609,7 +628,7 @@ for s = 1:length(session)
     % calculate the data and 95% CI
     for t = 1:length(time)
         y(t) = mean(data_visual(:, (s - 1) * length(time) + t));
-        CI(t) = std(data_visual(:, (s - 1) * length(time) + t)) / sqrt(length(participant)) * z;
+        CI(t) = std(data_visual(:, (s - 1) * length(time) + t)) / sqrt(length(participant([1:8, 10:11, 13:18, 20]))) * z;
     end
     
     % plot
@@ -624,7 +643,7 @@ for s = 1:length(session)
 end
 
 % add parameters
-figure_title = ['MEP normalized - both sessions'];
+figure_title = sprintf('MEP normalized - both sessions\nwithout outliers');
 figure_name = ['CAPSTEP_MEP_both_WO'];
 set(gca, 'xtick', 1:length(time), 'xticklabel', time)
 set(gca, 'Fontsize', 14)
@@ -632,8 +651,8 @@ title(figure_title, 'FontWeight', 'bold', 'FontSize', 16)
 xlabel('timepoint'); ylabel('MEP (% baseline)');
 
 % save the figure       
-savefig([figure_name '.fig'])
-saveas(fig, [figure_name '.png'])
+savefig([folder_figures '\' figure_name '.fig'])
+saveas(fig, [folder_figures '\' figure_name '.png'])
 
 % update the counter
 figure_counter = figure_counter + 1;    
@@ -641,6 +660,7 @@ figure_counter = figure_counter + 1;
 clear s t rows data_i data_visual x y perr figure_title figure_name CI 
 
 
+letswave
 
 
 

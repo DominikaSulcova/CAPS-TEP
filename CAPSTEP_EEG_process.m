@@ -43,6 +43,10 @@
 % 11) processing block 3
 %     - baseline correction
 %     - average across epochs
+% 12) correct sides and group average
+% 13) export for Ragu
+%     --> save to folder 'CAPSTEP_TEP_export' 
+
 
 %% parameters
 clear all
@@ -73,8 +77,8 @@ block = {'b1' 'b2'};
 prefix = 'EEG';
 electrodes = {'Fp1','Fp2','F3','F4','C3','C4','P3','P4','O1','O2','F7','F8','T7','T8','P7','P8','Fz','Cz','Pz','Iz','FC1','FC2','CP1','CP2','FC5','FC6','CP5','CP6','M1','M2','C1','C2'};
 
-% output
-output_file = [folder_results '\CAPSTEP_info.mat' ];
+% output 
+output_file = [folder_results '\CAPSTEP_output.mat' ];
 
 %% 1) CAPSTEP info: encode MEP IDs 
 % ----- section input -----
@@ -118,7 +122,7 @@ end
 clear p c subject filename fileID nline EMG_ID statement
 
 % save the output file
-save(output_file, 'CAPSTEP_info');
+save(output_file, 'CAPSTEP_info', '-append');
 
 %% 2) processing block 1
 % ----- section input -----
@@ -314,7 +318,7 @@ end
 clear p c subject statement filename dataset option lwdata events2remove kept_ID removed_ID
 
 % save the output file
-save(output_file, 'CAPSTEP_info');
+save(output_file, 'CAPSTEP_info', '-append');
 
 %% 5) preliminary ICA matrix
 % ----- section input -----
@@ -394,7 +398,7 @@ prefix = [suffix ' ' prefix];
 clear suffix
 
 % save the output file
-save(output_file, 'CAPSTEP_info');
+save(output_file, 'CAPSTEP_info', '-append');
 
 %% 7) processing block 2
 % ----- section input -----
@@ -501,7 +505,7 @@ clear p c t subject filename dataset option lwdata epochs n_epochs
 disp('Finished! Beer?!')
 
 % save the output file
-save(output_file, 'CAPSTEP_info');
+save(output_file, 'CAPSTEP_info', '-append');
 
 %% 9) second ICA matrix
 % ----- section input -----
@@ -596,7 +600,7 @@ clear p c subject filename dataset option lwdata components_n components_removed
 disp('Finished! Ad Hoc?!')
 
 % save the output file
-save(output_file, 'CAPSTEP_info');
+save(output_file, 'CAPSTEP_info', '-append');
 
 %% 11) processing block 3
 % ----- section input -----
@@ -637,7 +641,7 @@ for p = 1:length(participant)
         logfile_entry('block 3', filename)
     end
 end
-clear p c subject t dataset option lwdata bandpass crop_window
+clear p c subject t dataset option lwdata baseline 
 disp('Finished! Sendwich?')
 
 % update prefix
