@@ -56,7 +56,7 @@ save(output_file, 'CAPSTEP_TEP_default', '-append');
 % visualization 
 time_window = [-0.05, 0.3];
 z = 1.96;
-alpha = 0.2;
+alpha = 0.15;
 
 % visualization 
 figure_counter = 1;
@@ -516,12 +516,8 @@ end
 
 % identify participants without outliers
 WO_idx = find(~ismember(participant, outliers));
-participant_WO = participant(WO_idx);
 
 % loop through peaks
-% for c = 1:length(condition)
-%     col(c, :) = uisetcolor;
-% end
 for k = 1:length(CAPSTEP_TEP_default.peaks)  
     % load data
     data_amplitude = []; data_latency = [];
@@ -533,7 +529,7 @@ for k = 1:length(CAPSTEP_TEP_default.peaks)
     end
 
     % plot amplitude
-    fig = plot_box(data_amplitude, 'amplitude', condition, col, figure_counter)
+    fig = plot_box(data_amplitude, 'amplitude', condition, colours, figure_counter)
     hold off
 
     % name and save figure
@@ -545,7 +541,7 @@ for k = 1:length(CAPSTEP_TEP_default.peaks)
     figure_counter = figure_counter + 1;
     
     % plot latency
-    fig = plot_box(data_latency, 'latency', condition, col, figure_counter)
+    fig = plot_box(data_latency, 'latency', condition, colours, figure_counter)
     hold off
 
     % name and save figure
@@ -556,7 +552,145 @@ for k = 1:length(CAPSTEP_TEP_default.peaks)
     % update figure counter
     figure_counter = figure_counter + 1;
 end
-clear k c t
+clear k c t fig figure_name data_amplitude data_latency  WO_idx outliers
+
+%% 7) plot ratings - lineplot
+% ----- section input -----
+outliers = [9, 13, 23];
+% -------------------------
+% load input if necessary
+if exist('CAPSTEP_ratings') ~= 1
+    load(output_file, 'CAPSTEP_ratings')
+end
+
+% identify participants without outliers
+WO_idx = find(~ismember(participant, outliers));
+
+% prepare y, calculate 95% CI
+caps_idx = find(cellfun(@(x) all(x == 1), CAPSTEP_ratings(:, 3)));
+ratings_caps = cell2mat(CAPSTEP_ratings(caps_idx, [4:2:30]));
+ratings_caps = ratings_caps(WO_idx, :);
+for t = 1:size(ratings_caps, 2)
+    y(t) = mean(ratings_caps(:, t));
+%     CI(t) = std(ratings_caps(:, t)) / sqrt(size(ratings_caps, 1)) * z;
+    CI(t) = std(ratings_caps(:, t)) / sqrt(size(ratings_caps, 1));
+end
+
+% prepare x
+x = [0.75:0.5:7.25];
+
+% launch the figure
+fig = figure(figure_counter);
+hold on
+
+% determine limits
+xl = [0.25, length(time) + 0.75];
+xlim(xl); ylim([-10, 100])
+
+% plot
+plot_line(x, y, CI, colours(1, :), alpha)
+
+% add parameters
+figure_title = sprintf('Intensity ratings\nwithout outliers');
+set(gca, 'xtick', 1:length(time), 'xticklabel', time)
+set(gca, 'Fontsize', 16)
+title(figure_title, 'FontWeight', 'bold', 'FontSize', 16)
+xlabel('timepoint'); ylabel('perceived intensity (\pm SEM)');
+
+% name and save figure
+figure_name = sprintf('CAPSTEP_ratings_WO');
+savefig([folder_figures '\' figure_name '.fig'])
+saveas(fig, [folder_figures '\' figure_name '.svg'], 'svg')   
+
+% update the counter
+figure_counter = figure_counter + 1;      
+clear t x y caps_idx CI fig xl P F figure_title figure_name ratings_caps WO_idx outliers
+
+%% 8) plot peak values + ratings - lineplot
+% ----- section input -----
+outliers = [9, 13, 23];
+% -------------------------
+% load input if necessary
+load(output_file, 'CAPSTEP_ratings', 'CAPSTEP_TEP_peaks')
+
+% identify participants without outliers
+WO_idx = find(~ismember(participant, outliers));
+
+% prepare y - ratings
+caps_idx = find(cellfun(@(x) all(x == 1), CAPSTEP_ratings(:, 3)));
+ratings_caps = cell2mat(CAPSTEP_ratings(caps_idx, [4:2:30]));
+ratings_caps = ratings_caps(WO_idx, :);
+for t = 1:size(ratings_caps, 2)
+    y_ratings(t) = mean(ratings_caps(:, t));
+%     CI_ratings(t) = std(ratings_caps(:, t)) / sqrt(size(ratings_caps, 1)) * z;
+    CI_ratings(t) = std(ratings_caps(:, t)) / sqrt(size(ratings_caps, 1));
+end
+
+% prepare x
+x_TEP = 1:length(time);
+x_ratings = [0.75:0.5:7.25];
+
+% loop through peaks
+for k = 1:length(CAPSTEP_TEP_default.peaks)  
+    % prepare y - TEPs
+    y_TEP_all = CAPSTEP_TEP_peaks.amplitude_norm(:, :, WO_idx, k);  
+    for c = 1:length(condition)        
+        for t = 1:length(time)
+            y_TEP(c, t) = mean(squeeze(y_TEP_all(c, t, :)));
+%             CI_TEP(c, t) = std(squeeze(y_TEP_all(c, t, :))) / sqrt(size(y_TEP_all, 3)) * z;
+            CI_TEP(c, t) = std(squeeze(y_TEP_all(c, t, :))) / sqrt(size(y_TEP_all, 3));
+        end
+    end
+    
+    % launch the figure
+    fig = figure(figure_counter); 
+    hold on
+    
+    % determine x axis properties
+    xl = [0.25, length(time) + 0.75];
+    xlim(xl);
+    xlabel('timepoint');  
+    set(gca, 'xtick', 1:length(time), 'xticklabel', time)
+    
+    % plot ratings
+    yyaxis right
+    plot_line(x_ratings, y_ratings, CI_ratings, [0 0 0], alpha)
+    
+    % determine y axis properties
+    ylim([-10, 400])
+    set(gca, 'ytick', 0:20:100, 'YColor', [0 0 0])
+    ylabel('perceived intensity (\pm SEM)');
+    
+    % add no-change line
+    yyaxis left
+    line(xl, [0, 0], 'Color', [0 0 0], 'LineStyle', ':', 'LineWidth', 1.2);
+    
+    % plot TEP peak values    
+    plot_line(x_TEP, y_TEP, CI_TEP, colours, alpha, 'legend', {'capsaicin' 'control'})
+    
+    % determine y axis properties
+    yl_old = get(gca, 'ylim');
+    yl_new = yl_old;
+    yl_new(1) = yl_old(1) - round((yl_old(2) - yl_old(1))/4, 1);
+    ylim(yl_new)
+    set(gca, 'ytick', yl_old(1):0.5:yl_old(2), 'YColor', [0 0 0])
+    ylabel('\Delta amplitude (\muV \pm SEM)');
+    
+    % add other parameters
+    set(gca, 'Fontsize', 12)
+    figure_title = sprintf('TEP peak amplitude - %s\nwithout outliers', CAPSTEP_TEP_default.peaks{k});
+    title(figure_title, 'FontWeight', 'bold', 'FontSize', 12)
+
+    % name and save figure
+    figure_name = sprintf('CAPSTEP_TEP+ratings_%s_WO', CAPSTEP_TEP_default.peaks{k});
+    savefig([folder_figures '\' figure_name '.fig'])
+    saveas(fig, [folder_figures '\' figure_name '.svg'], 'svg')   
+
+    % update the counter
+    figure_counter = figure_counter + 1;    
+end
+clear k c t x_ratings y_ratings CI_ratings x_TEP y_TEP_all y_TEP CI_TEP caps_idx fig xl yl_old yl_new ...
+    figure_title figure_name ratings_caps WO_idx outliers
 
 %% functions
 function peak_x = gfp_plot(x, y, time_window, xstep, labeled, varargin)
@@ -712,52 +846,82 @@ pos_x = CP(1,1);
 
 end
 function fig = plot_box(data, datatype, condition, col, figure_counter)
-% launch the figure
-fig = figure(figure_counter);
-hold on
+    % launch the figure
+    fig = figure(figure_counter);
+    hold on
 
-% determine x limits
-xl = [0.25, size(data, 2)-0.25];
+    % determine x limits
+    xl = [0.25, size(data, 2)-0.25];
 
-% add zero line
-line(xl, [0, 0], 'LineStyle', ':', 'Color', [0, 0, 0], 'LineWidth', 0.9)
+    % add zero line
+    line(xl, [0, 0], 'LineStyle', ':', 'Color', [0, 0, 0], 'LineWidth', 0.9)
 
-% plot data per condition
-for c = 1:length(condition)  
-    % subset data
-    data_visual = squeeze(data(c, 2:end, :))';
+    % plot data per condition
+    for c = 1:length(condition)  
+        % subset data
+        data_visual = squeeze(data(c, 2:end, :))';
 
-    % determine x positions
-    if c == 1
-        data_x(c, :) = (1:size(data_visual, 2))-0.17;
-    else
-        data_x(c, :) = (1:size(data_visual, 2))+0.17;
+        % determine x positions
+        if c == 1
+            data_x(c, :) = (1:size(data_visual, 2))-0.17;
+        else
+            data_x(c, :) = (1:size(data_visual, 2))+0.17;
+        end
+
+        % boxplot
+        for t = 1:size(data_visual, 2)
+            P(c, t) = boxchart(data_x(c, t) * ones(size(data_visual, 1), 1), data_visual(:, t), ...
+                'BoxFaceColor', col(c, :), 'BoxWidth', 0.3, 'WhiskerLineColor', col(c, :), 'MarkerColor', col(c, :));
+        end       
     end
 
-    % boxplot
-    for t = 1:size(data_visual, 2)
-        P(c, t) = boxchart(data_x(c, t) * ones(size(data_visual, 1), 1), data_visual(:, t), ...
-            'BoxFaceColor', col(c, :), 'BoxWidth', 0.3, 'WhiskerLineColor', col(c, :), 'MarkerColor', col(c, :));
-    end       
+    % add legend
+    lgd = legend(P(:, 1), {'capsaicin' 'control'}, 'Location', 'southeast');
+    lgd.FontSize = 14;
+    legend('boxoff')
+
+    % y label
+    if strcmp(datatype, 'amplitude')
+        ylabel('change in amplitude (\muV)')
+    elseif strcmp(datatype, 'latency')
+        ylabel('change in latency (ms)')
+    end
+
+    % other parameters
+    xlim(xl)
+    xlabel('timepoint post application')
+    set(gca, 'FontSize', 14) 
+    set(gca, 'layer', 'top');
 end
+function plot_line(x, y, CI, colours, alpha, varargin)
+    % check for varargins
+    L = find(strcmpi(varargin, 'legend'));
+    if ~isempty(L)
+        label = varargin{L + 1};
+    end
 
-% add legend
-lgd = legend(P(:, 1), {'capsaicin' 'control'}, 'Location', 'southeast');
-lgd.FontSize = 14;
-legend('boxoff')
+    % loop through datasets
+    for a = 1:size(y, 1)
+        % plot the CI
+        F(a) = fill([x fliplr(x)],[y(a, :) + CI(a, :) fliplr(y(a, :) - CI(a, :))], ...
+            colours(a, :), 'FaceAlpha', alpha, 'linestyle', 'none');
 
-% y label
-if strcmp(datatype, 'amplitude')
-    ylabel('change in amplitude (\muV)')
-elseif strcmp(datatype, 'latency')
-    ylabel('change in latency (ms)')
-end
+        % plot the data
+        P(a) = plot(x, y(a, :))
+        P(a).Color = colours(a, :);
+        P(a).LineStyle = '-';
+        P(a).LineWidth = 1.2;
+        P(a).Marker = 'o';
+        P(a).MarkerFaceColor = colours(a, :);
+        P(a).MarkerSize = 6;
+    end
 
-% other parameters
-xlim(xl)
-xlabel('timepoint post application')
-set(gca, 'FontSize', 14) 
-set(gca, 'layer', 'top');
+    % add legend if required
+    if ~isempty(L)
+        lgd = legend(P, label, 'Location', 'northwest');
+        lgd.FontSize = 12;
+        legend('boxoff')
+    end
 end
 
 

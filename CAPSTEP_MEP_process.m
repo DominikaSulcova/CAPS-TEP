@@ -26,6 +26,8 @@
 %       - line + scatterplot, individual subjects
 % 8) Plots both sessions together - normalized MEP amplitude
 %       - dotplot
+% 9) plots both sessions together (normalized) + adds ratings
+%       - lineplot + SEM shading
 
 %% parameters
 clear all
@@ -659,10 +661,171 @@ figure_counter = figure_counter + 1;
 
 clear s t rows data_i data_visual x y perr figure_title figure_name CI 
 
+%% 8) VISUALIZATION both sessions together (normalized) + ratings 
+% ----- section input -----
+outliers = [9, 13, 23];
+% -------------------------
+% load input if necessary
+load(output_file, 'CAPSTEP_ratings', 'CAPSTEP_MEP')
 
-letswave
+% identify participants without outliers
+WO_idx = find(~ismember(participant, outliers));
 
+% prepare y - ratings
+caps_idx = find(cellfun(@(x) all(x == 1), CAPSTEP_ratings(:, 3)));
+ratings_caps = cell2mat(CAPSTEP_ratings(caps_idx, [4:2:30]));
+ratings_caps = ratings_caps(WO_idx, :);
+for t = 1:size(ratings_caps, 2)
+    y_ratings(t) = mean(ratings_caps(:, t));
+%     CI_ratings(t) = std(ratings_caps(:, t)) / sqrt(size(ratings_caps, 1)) * z;
+    CI_ratings(t) = std(ratings_caps(:, t)) / sqrt(size(ratings_caps, 1));
+end
 
+% prepare y - MEPs
+for s = 1:length(session)        
+    for t = 1:length(time)
+        rows = (categorical(CAPSTEP_MEP.session) == session{s} & ...
+            categorical(CAPSTEP_MEP.timepoint) == time{t});
+        data_i = CAPSTEP_MEP.amplitude_norm(rows);       
+        data_i = data_i(WO_idx);
+        y_MEP(s, t) = mean(data_i);
+        CI_MEP(s, t) = std(data_i) / sqrt(size(data_i, 1));
+    end
+end
+
+% prepare x
+x_MEP = 1:length(time);
+x_ratings = [0.75:0.5:7.25];
+    
+% launch the figure
+fig = figure(figure_counter); 
+hold on
+
+% determine x axis properties
+xl = [0.25, length(time) + 0.75];
+xlim(xl);
+xlabel('timepoint');  
+set(gca, 'xtick', 1:length(time), 'xticklabel', time)
+
+% plot ratings
+yyaxis right
+plot_line(x_ratings, y_ratings, CI_ratings, [0 0 0], alpha)
+
+% determine y axis properties
+ylim([-10, 400])
+set(gca, 'ytick', 0:20:100, 'YColor', [0 0 0])
+ylabel('perceived intensity (\pm SEM)');
+    
+% add no-change line
+yyaxis left
+line(xl, [100, 100], 'Color', [0 0 0], 'LineStyle', ':', 'LineWidth', 1.2);
+
+% plot TEP peak values    
+plot_line(x_MEP, y_MEP, CI_MEP, colours, alpha, 'legend', {'capsaicin' 'control'})
+    
+% determine y axis properties
+yl_old = get(gca, 'ylim');
+yl_new = yl_old;
+yl_new(1) = yl_old(1) - round((yl_old(2) - yl_old(1))/4, 1);
+ylim(yl_new)
+set(gca, 'ytick', yl_old(1):10:yl_old(2), 'YColor', [0 0 0])
+ylabel('\Delta amplitude (% baseline \pm SEM)');
+    
+% add other parameters
+set(gca, 'Fontsize', 12)
+figure_title = sprintf('MEP amplitude - %s\nwithout outliers', CAPSTEP_TEP_default.peaks{k});
+title(figure_title, 'FontWeight', 'bold', 'FontSize', 12)
+
+% name and save figure
+figure_name = sprintf('CAPSTEP_MEP+ratings_WO');
+savefig([folder_figures '\' figure_name '.fig'])
+saveas(fig, [folder_figures '\' figure_name '.svg'], 'svg')   
+
+% update the counter
+figure_counter = figure_counter + 1;    
+
+clear k s t x_ratings y_ratings CI_ratings x_MEP rows data_i y_MEP CI_MEP caps_idx fig xl yl_old yl_new ...
+    figure_title figure_name ratings_caps WO_idx outliers
+
+%% FUNCTIONS
+function fig = plot_box(data, datatype, condition, col, figure_counter)
+    % launch the figure
+    fig = figure(figure_counter);
+    hold on
+
+    % determine x limits
+    xl = [0.25, size(data, 2)-0.25];
+
+    % add zero line
+    line(xl, [0, 0], 'LineStyle', ':', 'Color', [0, 0, 0], 'LineWidth', 0.9)
+
+    % plot data per condition
+    for c = 1:length(condition)  
+        % subset data
+        data_visual = squeeze(data(c, 2:end, :))';
+
+        % determine x positions
+        if c == 1
+            data_x(c, :) = (1:size(data_visual, 2))-0.17;
+        else
+            data_x(c, :) = (1:size(data_visual, 2))+0.17;
+        end
+
+        % boxplot
+        for t = 1:size(data_visual, 2)
+            P(c, t) = boxchart(data_x(c, t) * ones(size(data_visual, 1), 1), data_visual(:, t), ...
+                'BoxFaceColor', col(c, :), 'BoxWidth', 0.3, 'WhiskerLineColor', col(c, :), 'MarkerColor', col(c, :));
+        end       
+    end
+
+    % add legend
+    lgd = legend(P(:, 1), {'capsaicin' 'control'}, 'Location', 'southeast');
+    lgd.FontSize = 14;
+    legend('boxoff')
+
+    % y label
+    if strcmp(datatype, 'amplitude')
+        ylabel('change in amplitude (\muV)')
+    elseif strcmp(datatype, 'latency')
+        ylabel('change in latency (ms)')
+    end
+
+    % other parameters
+    xlim(xl)
+    xlabel('timepoint post application')
+    set(gca, 'FontSize', 14) 
+    set(gca, 'layer', 'top');
+end
+function plot_line(x, y, CI, colours, alpha, varargin)
+    % check for varargins
+    L = find(strcmpi(varargin, 'legend'));
+    if ~isempty(L)
+        label = varargin{L + 1};
+    end
+
+    % loop through datasets
+    for a = 1:size(y, 1)
+        % plot the CI
+        F(a) = fill([x fliplr(x)],[y(a, :) + CI(a, :) fliplr(y(a, :) - CI(a, :))], ...
+            colours(a, :), 'FaceAlpha', alpha, 'linestyle', 'none');
+
+        % plot the data
+        P(a) = plot(x, y(a, :))
+        P(a).Color = colours(a, :);
+        P(a).LineStyle = '-';
+        P(a).LineWidth = 1.2;
+        P(a).Marker = 'o';
+        P(a).MarkerFaceColor = colours(a, :);
+        P(a).MarkerSize = 6;
+    end
+
+    % add legend if required
+    if ~isempty(L)
+        lgd = legend(P, label, 'Location', 'northwest');
+        lgd.FontSize = 12;
+        legend('boxoff')
+    end
+end
 
  
 
