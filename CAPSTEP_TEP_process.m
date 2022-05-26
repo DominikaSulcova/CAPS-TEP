@@ -17,7 +17,9 @@
 % 4) extract TEP peak amplitudes
 %     --> peak values saved to structure 'CAPSTEP_results' and added tp the
 %     global MATLAB output file
-% ) plot TEPs
+% 5) export for R
+%     - save in a long-format table suitable for statistics in R
+%     --> 'CAPSTEP_TEP_values.csv'
 % ) plot peak values
 
 %% parameters
@@ -35,7 +37,7 @@ folder_input = uigetdir(path, 'Coose the input folder');
 % choose the results and figures folder  
 path = 'E:\UCL\O365G-NOCIONS - CAPS-TEP - CAPS-TEP\Results';
 folder_results = uigetdir(path, 'Coose the results folder');
-folder_figures = [folder_results '\CAPSTEP_TEP_figures'];
+folder_figures = [folder_results '\CAPSTEP_figures'];
 
 % dataset
 participant = [1:10, 12:14, 16:18, 20, 22:24];
@@ -503,6 +505,59 @@ writetable(CAPSTEP_TEP_values, [folder_results '\CAPSTEP_TEP_values.csv'])
 
 clear c t p k row_counter
 
+%% 6) plot peak values - boxplot
+% ----- section input -----
+outliers = [9, 13, 23];
+% -------------------------
+% load input if necessary
+if exist('CAPSTEP_TEP_peaks') ~= 1
+    load(output_file, 'CAPSTEP_TEP_peaks', 'CAPSTEP_TEP_default')
+end
+
+% identify participants without outliers
+WO_idx = find(~ismember(participant, outliers));
+participant_WO = participant(WO_idx);
+
+% loop through peaks
+% for c = 1:length(condition)
+%     col(c, :) = uisetcolor;
+% end
+for k = 1:length(CAPSTEP_TEP_default.peaks)  
+    % load data
+    data_amplitude = []; data_latency = [];
+    for c = 1:length(condition)       
+        for t = 1:length(time)
+            data_amplitude(c, t, :) = CAPSTEP_TEP_peaks.amplitude_norm(c, t, WO_idx, k);
+            data_latency(c, t, :) = CAPSTEP_TEP_peaks.latency(c, t, WO_idx, k);
+        end
+    end
+
+    % plot amplitude
+    fig = plot_box(data_amplitude, 'amplitude', condition, col, figure_counter)
+    hold off
+
+    % name and save figure
+    figure_name = sprintf('CAPSTEP_TEP_amplitude_%s_WO', CAPSTEP_TEP_default.peaks{k});
+    savefig([folder_figures '\' figure_name '.fig'])
+    saveas(fig, [folder_figures '\' figure_name '.svg'], 'svg')   
+
+    % update figure counter
+    figure_counter = figure_counter + 1;
+    
+    % plot latency
+    fig = plot_box(data_latency, 'latency', condition, col, figure_counter)
+    hold off
+
+    % name and save figure
+    figure_name = sprintf('CAPSTEP_TEP_latency_%s_WO', CAPSTEP_TEP_default.peaks{k});
+    savefig([folder_figures '\' figure_name '.fig'])
+    saveas(fig, [folder_figures '\' figure_name '.svg'], 'svg')   
+
+    % update figure counter
+    figure_counter = figure_counter + 1;
+end
+clear k c t
+
 %% functions
 function peak_x = gfp_plot(x, y, time_window, xstep, labeled, varargin)
 % check whether to plot labels (default)
@@ -656,7 +711,54 @@ CP = get(axesHandles(1), 'CurrentPoint');
 pos_x = CP(1,1);
 
 end
+function fig = plot_box(data, datatype, condition, col, figure_counter)
+% launch the figure
+fig = figure(figure_counter);
+hold on
 
+% determine x limits
+xl = [0.25, size(data, 2)-0.25];
+
+% add zero line
+line(xl, [0, 0], 'LineStyle', ':', 'Color', [0, 0, 0], 'LineWidth', 0.9)
+
+% plot data per condition
+for c = 1:length(condition)  
+    % subset data
+    data_visual = squeeze(data(c, 2:end, :))';
+
+    % determine x positions
+    if c == 1
+        data_x(c, :) = (1:size(data_visual, 2))-0.17;
+    else
+        data_x(c, :) = (1:size(data_visual, 2))+0.17;
+    end
+
+    % boxplot
+    for t = 1:size(data_visual, 2)
+        P(c, t) = boxchart(data_x(c, t) * ones(size(data_visual, 1), 1), data_visual(:, t), ...
+            'BoxFaceColor', col(c, :), 'BoxWidth', 0.3, 'WhiskerLineColor', col(c, :), 'MarkerColor', col(c, :));
+    end       
+end
+
+% add legend
+lgd = legend(P(:, 1), {'capsaicin' 'control'}, 'Location', 'southeast');
+lgd.FontSize = 14;
+legend('boxoff')
+
+% y label
+if strcmp(datatype, 'amplitude')
+    ylabel('change in amplitude (\muV)')
+elseif strcmp(datatype, 'latency')
+    ylabel('change in latency (ms)')
+end
+
+% other parameters
+xlim(xl)
+xlabel('timepoint post application')
+set(gca, 'FontSize', 14) 
+set(gca, 'layer', 'top');
+end
 
 
 
