@@ -1,6 +1,7 @@
 %% CAPSTEP: PROCESS TEPs
 % Written by Dominika for the CAPS-TEP project (2022)
 
+% ----- Extract peak values of TEP components ----- 
 % 1) load data
 %     - data cropped [-0.05 0.3]s 
 %     --> datasets saved to structure 'CAPSTEP_TEP_data' and added
@@ -20,7 +21,12 @@
 % 5) export for R
 %     - save in a long-format table suitable for statistics in R
 %     --> 'CAPSTEP_TEP_values.csv'
-% ) plot peak values
+
+% ----- Group visualization ----- 
+% 6) plot baseline TEPs
+% 7) plot peak values - boxplot
+% 8) plot ratings - lineplot
+% 9) plot peak values + ratings - lineplot
 
 %% parameters
 clear all
@@ -41,17 +47,17 @@ folder_figures = [folder_results '\CAPSTEP_figures'];
 
 % dataset
 participant = [1:10, 12:14, 16:18, 20, 22:24];
-prefix = 'hanflip avg bl icfilt ica visual crop notch bandpass prefilt prea ds art-sup dc ep reref chan-select reref EEG';
+prefix = 'chanflip avg bl icfilt ica visual crop notch bandpass prefilt prea ds art-sup dc ep reref chan-select reref EEG';
 condition = {'caps' 'ctrl'};
 time = {'baseline' 't1' 't2' 't3' 't4' 't5' 't6'};
 
 % output 
 output_file = [folder_results '\CAPSTEP_output.mat' ];
 
-% TEP default
-CAPSTEP_TEP_default.electrodes = {'Fp1','Fp2','F3','F4','C3','C4','P3','P4','O1','O2','F7','F8','T7','T8','P7','P8','Fz','Cz','Pz','Iz','FC1','FC2','CP1','CP2','FC5','FC6','CP5','CP6','C1','C2'};
-CAPSTEP_TEP_default.peaks = {'N15' 'P30' 'N45' 'P60' 'N100' 'P180'}; 
-save(output_file, 'CAPSTEP_TEP_default', '-append');
+% % TEP default
+% CAPSTEP_TEP_default.electrodes = {'Fp1','Fp2','F3','F4','C3','C4','P3','P4','O1','O2','F7','F8','T7','T8','P7','P8','Fz','Cz','Pz','Iz','FC1','FC2','CP1','CP2','FC5','FC6','CP5','CP6','C1','C2'};
+% CAPSTEP_TEP_default.peaks = {'N15' 'P30' 'N45' 'P60' 'N100' 'P180'}; 
+% save(output_file, 'CAPSTEP_TEP_default', '-append');
 
 % visualization 
 time_window = [-0.05, 0.3];
@@ -159,14 +165,14 @@ end
 hold off
 
 % save figure
-savefig([folder_figures '\TEP_GFP.fig'])
-saveas(fig, [folder_figures '\TEP_GFP.png'])
+savefig([folder_figures '\CAPSTEP_TEP_GFP.fig'])
+saveas(fig, [folder_figures '\CAPSTEP_TEP_GFP.png'])
 
 % update figure counteer
 figure_counter = figure_counter + 1;
 
 % append new variable to the general MATLAB file
-save(output_file, 'CAPSTEP_TEP_mean', '-append');
+save(output_file, 'CAPSTEP_TEP_mean', 'CAPSTEP_TEP_default', '-append');
 
 clear c t k data_topoplot fig figure_name pos h_axis TEP_peaks labeled max_peaks 
 
@@ -461,7 +467,7 @@ for p = 1:length(participant)
     else
         subj = num2str(participant(p));
     end
-    figure_name = ['CAPSTEP_amplitude' subj];
+    figure_name = ['CAPSTEP_amplitude_' subj];
     savefig([folder_figures '\TEP amplitude\' figure_name '.fig'])
     saveas(fig, [folder_figures '\TEP amplitude\' figure_name '.png'])
     close(fig)
@@ -505,7 +511,35 @@ writetable(CAPSTEP_TEP_values, [folder_results '\CAPSTEP_TEP_values.csv'])
 
 clear c t p k row_counter
 
-%% 6) plot peak values - boxplot
+%% 6) plot baseline TEPs 
+% ----- section input -----
+outliers = [9, 13, 23];
+% -------------------------
+% load input if necessary
+if exist('CAPSTEP_TEP_data') ~= 1
+    load(output_file, 'CAPSTEP_TEP_peaks', 'CAPSTEP_TEP_default')
+end
+
+% identify participants without outliers
+WO_idx = find(~ismember(participant, outliers));
+
+% average baseline data across sessions
+data_visual = squeeze(mean(CAPSTEP_TEP_data(:, 1, WO_idx, :, :), [1 3]));
+
+% plot butterfly + highlight Cz
+fig = plot_TEP(x, data_visual, time_window, figure_counter);
+
+% name and save figure
+figure_name = 'CAPSTEP_TEP_baseline';
+savefig([folder_figures '\' figure_name '.fig'])
+saveas(fig, [folder_figures '\' figure_name '.svg'])
+
+% update figure counter
+figure_counter = figure_counter + 1 ;
+
+clear outliers WO_idx data_visual fig figure_name
+
+%% 7) plot peak values - boxplot
 % ----- section input -----
 outliers = [9, 13, 23];
 % -------------------------
@@ -554,7 +588,7 @@ for k = 1:length(CAPSTEP_TEP_default.peaks)
 end
 clear k c t fig figure_name data_amplitude data_latency  WO_idx outliers
 
-%% 7) plot ratings - lineplot
+%% 8) plot ratings - lineplot
 % ----- section input -----
 outliers = [9, 13, 23];
 % -------------------------
@@ -606,7 +640,7 @@ saveas(fig, [folder_figures '\' figure_name '.svg'], 'svg')
 figure_counter = figure_counter + 1;      
 clear t x y caps_idx CI fig xl P F figure_title figure_name ratings_caps WO_idx outliers
 
-%% 8) plot peak values + ratings - lineplot
+%% 9) plot peak values + ratings - lineplot
 % ----- section input -----
 outliers = [9, 13, 23];
 % -------------------------
@@ -844,6 +878,43 @@ w = waitforbuttonpress;
 CP = get(axesHandles(1), 'CurrentPoint');
 pos_x = CP(1,1);
 
+end
+function fig = plot_TEP(x, data_visual, time_window, figure_counter)   
+    % launch the figure
+    fig = figure(figure_counter);
+    hold on
+
+    % set limits of y
+    plot(x, data_visual, 'LineWidth', 0.5)
+    yl = get(gca, 'ylim'); 
+    yl(1) = yl(1) - ((yl(2) - yl(1))*0.05); yl(2) = yl(2) + ((yl(2) - yl(1))*0.05);
+    clf, hold on
+
+    % shade interpolated interval 
+    rectangle('Position', [-0.005, yl(1) + 0.02, 0.015, yl(2) - yl(1) - 0.02], 'FaceColor', [0.99 0.73 0.73], 'EdgeColor', 'none')
+
+    % loop through channels to plot
+    for a = 1:size(data_visual, 1)     
+        P(a) = plot(x, data_visual(a, :), 'Color', [0.75 0.75 0.75], 'LineWidth', 1);
+    end
+
+    % Cz electrode
+    P(end+1) =  plot(x, data_visual(18, :), 'Color', [0 0 0], 'LineWidth', 3);
+
+    % TMS stimulus
+    line([0, 0], yl, 'Color', [0.8000    0.0549    0.0549], 'LineWidth', 3)
+
+    % other parameters
+    xlabel('time (s)')
+    ylabel('amplitude (\muV)')
+    set(gca, 'FontSize', 14)
+    xlim(time_window)    
+    ylim(yl)
+    
+    % add legend
+    lgd = legend(P(end), 'Cz electrode', 'Box', 'off');
+    lgd.FontSize = 14;
+    lgd.Position = [0.225 0.05 0.4 0.3];
 end
 function fig = plot_box(data, datatype, condition, col, figure_counter)
     % launch the figure

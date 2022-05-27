@@ -26,8 +26,11 @@
 %       - line + scatterplot, individual subjects
 % 8) Plots both sessions together - normalized MEP amplitude
 %       - dotplot
-% 9) plots both sessions together (normalized) + adds ratings
+% 9) Plots both sessions together (normalized) + adds ratings
 %       - lineplot + SEM shading
+% 10) Plots average MEP timecourse
+%       - at the baseline
+%       - baseline vs. t6
 
 %% parameters
 clear all
@@ -44,7 +47,7 @@ folder_input = uigetdir(path, 'Coose the input folder');
 % choose the results and figures folder  
 path = 'E:\UCL\O365G-NOCIONS - CAPS-TEP - CAPS-TEP\Results';
 folder_results = uigetdir(path, 'Coose the results folder');
-folder_figures = [folder_results '\CAPSTEP_MEP_figures'];
+folder_figures = [folder_results '\CAPSTEP_figures'];
 output_file = [folder_results '\CAPSTEP_output'];
 
 % dataset
@@ -67,6 +70,9 @@ window = [0.015 0.05];
 % visualization
 figure_counter = 1;
 z = 1.96;
+alpha = 0.15;
+
+load([folder_git '\colours.mat'])
 if ~exist('colormap.mat')
     for c = 1:length(session)
         col(c, :) = uisetcolor(['Choose colour for ' session{c} ' data:']);
@@ -661,8 +667,9 @@ figure_counter = figure_counter + 1;
 
 clear s t rows data_i data_visual x y perr figure_title figure_name CI 
 
-%% 8) VISUALIZATION both sessions together (normalized) + ratings 
+%% 9) VISUALIZATION both sessions together (normalized) + ratings 
 % ----- section input -----
+participant = [1:10, 12:14, 16:18, 20, 22:24];
 outliers = [9, 13, 23];
 % -------------------------
 % load input if necessary
@@ -733,7 +740,7 @@ ylabel('\Delta amplitude (% baseline \pm SEM)');
     
 % add other parameters
 set(gca, 'Fontsize', 12)
-figure_title = sprintf('MEP amplitude - %s\nwithout outliers', CAPSTEP_TEP_default.peaks{k});
+figure_title = sprintf('MEP amplitude\nwithout outliers');
 title(figure_title, 'FontWeight', 'bold', 'FontSize', 12)
 
 % name and save figure
@@ -746,6 +753,124 @@ figure_counter = figure_counter + 1;
 
 clear k s t x_ratings y_ratings CI_ratings x_MEP rows data_i y_MEP CI_MEP caps_idx fig xl yl_old yl_new ...
     figure_title figure_name ratings_caps WO_idx outliers
+
+%% 10) EXTRACT INDIVIDUAL MEAN DATA
+% ----- section input -----
+participant = [1:10, 12:14, 16:18, 20, 22:24];
+time_window = [-0.2 0.1];
+% -------------------------
+% load random header
+load([folder_input '\' prefix_1 ' ' prefix_old ' 01 caps t1.lw6'],'-mat');
+
+% define visualization parameters
+x = [time_window(1):header.xstep:time_window(2)];
+x_start = floor((time_window(1) - header.xstart)/header.xstep) + 1;
+x_end = floor((time_window(2) - header.xstart)/header.xstep) + 1;
+
+% load data, average across epochs
+for s = 1:length(session) 
+    for t = 1:length(time) 
+        for p = 1:length(participant) 
+            % define participant
+            if participant(p) < 10
+                subj = ['0' num2str(participant(p))];
+            else
+                subj = num2str(participant(p));
+            end
+            
+            % load dataset
+            load([folder_input '\' prefix_1 ' ' prefix_old ' ' subj ' ' session{s} ' ' time{t} '.mat'])
+
+            % append averaged data in the matrix
+            data_mean = squeeze(mean(data, 1));
+            CAPSTEP_MEP_data(s, t, p, :) = data_mean(x_start:x_end);        
+        end
+    end
+end
+
+% save to the global MATLAB file
+save(output_file, 'CAPSTEP_MEP_data', '-append');
+clear s t p subj header data data_mean x x_start x_end
+
+%% 11) VISUALIZATION MEP timecourse
+% ----- section input -----
+participant = [1:10, 12:14, 16:18, 20, 22:24];
+outliers = [9, 13, 23];
+time_window = [-0.025 0.075];
+% -------------------------
+% identify participants without outliers
+WO_idx = find(~ismember(participant, outliers));
+
+% load random header
+load([folder_input '\' prefix_1 ' ' prefix_old ' 01 caps t1.lw6'],'-mat');
+
+% define visualization parameters
+x = [time_window(1):header.xstep:time_window(2)];
+x_start = floor((time_window(1) - header.xstart)/header.xstep);
+x_end = floor((time_window(2) - header.xstart)/header.xstep);
+
+% load data for visualization
+for s = 1:length(session) 
+    for t = 1:length(time) 
+        for p = 1:length(participant) 
+            % define participant
+            if participant(p) < 10
+                subj = ['0' num2str(participant(p))];
+            else
+                subj = num2str(participant(p));
+            end
+            
+            % load dataset
+            load([folder_input '\' prefix_1 ' ' prefix_old ' ' subj ' ' session{s} ' ' time{t} '.mat'])
+
+            % append averaged data in the matrix
+            data_mean = squeeze(mean(data, 1));
+            data_visual_i(s, t, p, :) = data_mean(x_start:x_end);        
+        end
+    end
+end
+data_visual_i = data_visual_i(:, :, WO_idx, :);
+clear data
+
+% calculate group average values
+data_visual = squeeze(mean(data_visual_i, 3));
+CI_visual = squeeze(std(data_visual_i, 0, 3)/sqrt(size(data_visual_i, 3))); % * z;
+
+% plot baseline
+data(1, :) = squeeze(mean(data_visual(:, 1, :), 1));
+CI(1, :) = squeeze(mean(CI_visual(:, 1, :), 1));
+fig = plot_timeseries(x, data, CI, figure_counter, time_window, [0 0 0], alpha)
+clear data CI
+
+% name and save figure
+figure_name = 'CAPSTEP_MEP_baseline';
+savefig([folder_figures '\' figure_name '.fig'])
+saveas(fig, [folder_figures '\' figure_name '.svg'])
+
+% update figure counter
+figure_counter = figure_counter + 1;
+
+% plot MEP baseline vs. t6 - per session
+for s = 1:length(session)
+    % get the data
+    a = 1;
+    for t = [1 4]
+        data(a, :) = squeeze(data_visual(s, t, :));
+        CI(a, :) = squeeze(CI_visual(s, t, :));
+        a = a + 1;
+    end
+    fig = plot_timeseries(x, data, CI, figure_counter, time_window, cat(1, [0 0 0], colours(s, :)), alpha, 'legend', {'baseline' 't3'})
+
+    % name and save figure
+    figure_name = sprintf('CAPSTEP_MEP_change_%s', session{s});
+    savefig([folder_figures '\' figure_name '.fig'])
+    saveas(fig, [folder_figures '\' figure_name '.svg'])
+
+    % update figure counter
+    figure_counter = figure_counter + 1;
+end
+
+clear s t a outliers WO_idx x x_start x_end data_visual_i data_visual CI_visual data CI fig figure_name
 
 %% FUNCTIONS
 function fig = plot_box(data, datatype, condition, col, figure_counter)
@@ -826,8 +951,48 @@ function plot_line(x, y, CI, colours, alpha, varargin)
         legend('boxoff')
     end
 end
+function fig = plot_timeseries(x, y, CI, figure_counter, time_window, colours, alpha, varargin)
+    % check for varargins
+    L = find(strcmpi(varargin, 'legend'));
+    if ~isempty(L)
+        label = varargin{L + 1};
+    end
+    
+    % launch the figure
+    fig = figure(figure_counter);
+    hold on
 
- 
+    % set limits of the figure
+    plot(x, y + CI, 'b:', 'LineWidth', 0.5)
+    plot(x, y - CI, 'b:', 'LineWidth', 0.5)
+    yl = get(gca, 'ylim'); 
+    yl(1) = yl(1) - ((yl(2) - yl(1))*0.05); yl(2) = yl(2) + ((yl(2) - yl(1))*0.05);
+    clf, hold on
+
+    % loop through datasets to plot
+    for a = 1:size(y, 1)        
+        P(a) = plot(x, y(a, :), 'Color', colours(a, :), 'LineWidth', 2.5);
+        F(a) = fill([x fliplr(x)],[y(a, :) + CI(a, :) fliplr(y(a, :) - CI(a, :))], ...
+            colours(a, :), 'FaceAlpha', alpha, 'linestyle', 'none');
+    end
+
+    % mark TMS stimulus
+    line([0, 0], yl, 'Color', [0.8000    0.0549    0.0549], 'LineWidth', 3)
+
+    % set other parameters
+    xlim(time_window)
+    ylim(yl)
+    xlabel('time (s)')
+    ylabel('amplitude (\muV)')
+    set(gca, 'FontSize', 14)
+
+    % add legend if required
+    if ~isempty(L)
+        lgd = legend(P, label, 'Location', 'northeast');
+        lgd.FontSize = 12;
+        legend('boxoff')
+    end
+end
 
 
                

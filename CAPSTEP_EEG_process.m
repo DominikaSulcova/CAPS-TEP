@@ -709,7 +709,7 @@ time_window = [-0.05, 0.3];
 % participant = [];
 % -------------------------
 % calculate crop limits
-load([prefix ' 01 caps baseline.lw6'], '-mat')                    
+load([folder_input '\' prefix ' 01 caps baseline.lw6'], '-mat')                    
 x_start = (time_window(1) - header.xstart)/header.xstep;
 x_end = (time_window(2) - header.xstart)/header.xstep;
 
@@ -725,7 +725,7 @@ for c = 1:length(condition)
             end
 
             % load the data
-            name_old = [prefix ' ' subject ' ' condition{c} ' ' time{t} '.mat'];
+            name_old = [folder_input '\' prefix ' ' subject ' ' condition{c} ' ' time{t} '.mat'];
             load(name_old)
             data = squeeze(data(:, 1:30, :, :, :, x_start:x_end))';
 
