@@ -609,7 +609,7 @@ for s = 1:length(session)
 end
 clear s t p b fig pline scat statement C figure_title figure_name cmap rows data_i data_visual 
 
-%% 8) VISUALIZATION both sessions together - normalized 
+%% 8A) VISUALIZATION both sessions together - normalized 
 % choose the data
 data_visual = [];
 for s = 1:length(session)
@@ -666,6 +666,73 @@ saveas(fig, [folder_figures '\' figure_name '.png'])
 figure_counter = figure_counter + 1;    
 
 clear s t rows data_i data_visual x y perr figure_title figure_name CI 
+
+%% 8B) VISUALIZATION both sessions together - normalized 
+% ----- section input -----
+outliers = [9, 13, 23];
+% -------------------------
+% identify participants without outliers
+WO_idx = find(~ismember(participant, outliers));
+
+% prepare x
+x_MEP = 1:length(time);
+
+% prepare y 
+load(output_file, 'CAPSTEP_MEP')
+for s = 1:length(session)        
+    for t = 1:length(time)
+        rows = (categorical(CAPSTEP_MEP.session) == session{s} & ...
+            categorical(CAPSTEP_MEP.timepoint) == time{t});
+        data_i = CAPSTEP_MEP.amplitude_norm(rows);       
+        data_i = data_i(WO_idx);
+        y_MEP(s, t) = mean(data_i);
+        CI_MEP(s, t) = std(data_i) / sqrt(size(data_i, 1));
+    end
+end
+
+% launch the figure
+fig = figure(figure_counter); 
+hold on
+
+% determine x axis properties
+xl = [0.25, length(time) + 0.75];
+xlim(xl);
+xlabel('timepoint');  
+set(gca, 'xtick', 1:length(time), 'xticklabel', time)
+
+% add no-change line
+line(xl, [100, 100], 'Color', [0 0 0], 'LineStyle', ':', 'LineWidth', 1.2);
+    
+% plot TEP peak values    
+plot_line(x_MEP, y_MEP, CI_MEP, colours, alpha, 'legend', {'capsaicin' 'control'})
+    
+% determine y axis properties
+yl_old = get(gca, 'ylim');
+yl_new = yl_old;
+%     yl_new(1) = yl_old(1) - round((yl_old(2) - yl_old(1))/4, 1);
+ylim(yl_new)
+set(gca, 'ytick', yl_old(1):10:yl_old(2), 'YColor', [0 0 0])
+ylabel(sprintf('relative MEP amplitude\n(%% baseline +- SEM)'));
+
+% change figure size
+fig.Position = [500 300 600 400];
+
+% add other parameters
+set(gca, 'Fontsize', 14)
+figure_title = 'MEP amplitude - %s\nwithout outliers';
+% title(figure_title, 'FontWeight', 'bold', 'FontSize', 14)
+
+% name and save figure
+figure_name = 'CAPSTEP_MEP_WO';
+savefig([folder_figures '\' figure_name '.fig'])
+saveas(fig, [folder_figures '\' figure_name '.svg'], 'svg')   
+
+% update the counter
+figure_counter = figure_counter + 1;    
+
+clear k c t x_ratings y_ratings CI_ratings x_TEP y_TEP_all y_TEP CI_TEP caps_idx fig xl yl_old yl_new ...
+    figure_title figure_name ratings_caps WO_idx outliers
+
 
 %% 9) VISUALIZATION both sessions together (normalized) + ratings 
 % ----- section input -----
@@ -947,7 +1014,7 @@ function plot_line(x, y, CI, colours, alpha, varargin)
     % add legend if required
     if ~isempty(L)
         lgd = legend(P, label, 'Location', 'northwest');
-        lgd.FontSize = 12;
+        lgd.FontSize = 14;
         legend('boxoff')
     end
 end
