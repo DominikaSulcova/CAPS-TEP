@@ -55,6 +55,7 @@ clc
 % choose the Git folder --> source of saved default files
 path = 'C:\Users\sulcova\Desktop\GitHub\CAPS-TEP';
 folder_git = uigetdir(path, 'Choose the Git folder');
+addpath(folder_git)
 
 % choose the folder with processed data 
 path = 'E:\Data\CAPS-TEP - data\Processed data';
