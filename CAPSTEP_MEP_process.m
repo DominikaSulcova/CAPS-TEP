@@ -378,7 +378,7 @@ clear avg_rms avg_sd current_max current_rms cutoff cycle data data_visual data_
     discarded discarded_pos ditch fig figure_name final_rms go header M xlim l x
 clear a e i n p s t 
 
-%% PEAK-TO-PEAK AMPLITUDE
+%% PEAK-TO-PEAK AMPLITUDE - subject average
 % prepare a table for amplitude results
 amplitudes = table; 
 amplitudes.subject = zeros(0); amplitudes.session = zeros(0); amplitudes.timepoint = zeros(0);
@@ -393,12 +393,12 @@ for p = 1:length(participant)
                 load([prefix_1 ' ' prefix_old ' ' participant{p} ' ' session{s} ' ' time{t} '.mat']);
                 load([prefix_1 ' ' prefix_old ' ' participant{p} ' ' session{s} ' ' time{t} '.lw6'], '-mat');
                 
+                % choose the window
+                x_start = ceil((window(1) - header.xstart)/header.xstep);
+                x_end = ceil((window(2) - header.xstart)/header.xstep);
+                
                 % loop through epochs
-                for e = 1:size(data, 1)
-                    % choose the window
-                    x_start = ceil((window(1) - header.xstart)/header.xstep);
-                    x_end = ceil((window(2) - header.xstart)/header.xstep);
-                    
+                for e = 1:size(data, 1)                    
                     % identify extremes
                     y_max(e) = max(squeeze(data(e, 1, 1, 1, 1, x_start:x_end)));
                     y_min(e) = min(squeeze(data(e, 1, 1, 1, 1, x_start:x_end)));
@@ -459,6 +459,66 @@ MEP.amplitude_nozero = amplitudes.amp_nozero;
 CAPSTEP_MEP = MEP;
 save(output_file, 'CAPSTEP_MEP', '-append');
 clear amplitudes
+
+%% PEAK FEATURES - single trial
+% launch the table 
+CAPSTEP_MEP_singletrial = table; 
+
+% loop through datasets 
+for p = 1:length(participant)
+    for s = 1:length(session)
+        for t = 1:length(time) 
+            % load data and header
+            load([folder_input '\' prefix_1 ' ' prefix_old ' ' participant{p} ' ' session{s} ' ' time{t} '.mat']);
+            load([folder_input '\' prefix_1 ' ' prefix_old ' ' participant{p} ' ' session{s} ' ' time{t} '.lw6'], '-mat');
+            
+            % choose the window
+            x_start = ceil((window(1) - header.xstart)/header.xstep);
+            x_end = ceil((window(2) - header.xstart)/header.xstep);
+
+            % extract peak features
+            for e = 1:size(data, 1)
+                % identify extremes
+                y_max = max(squeeze(data(e, 1, 1, 1, 1, x_start:x_end)));
+                y_min = min(squeeze(data(e, 1, 1, 1, 1, x_start:x_end)));
+                
+                % determine peak latency
+                x_max = find(data(e, 1, 1, 1, 1, :) == y_max) * header.xstep + header.xstart;
+                x_min = find(data(e, 1, 1, 1, 1, :) == y_min) * header.xstep + header.xstart;
+                if x_max < x_min
+                    lat = round(x_max * 1000, 2);
+                else
+                    lat = round(x_min * 1000, 2);
+                end
+                
+                % calculate peak amplitude 
+                amp = y_max - y_min; 
+                
+                % append the line to the output table 
+                if size(CAPSTEP_MEP_singletrial, 1) == 0
+                    CAPSTEP_MEP_singletrial.subject = participant(p); 
+                    CAPSTEP_MEP_singletrial.session = session(s); 
+                    CAPSTEP_MEP_singletrial.timepoint = time(t); 
+                    CAPSTEP_MEP_singletrial.trial = e; 
+                    CAPSTEP_MEP_singletrial.latency = lat;
+                    CAPSTEP_MEP_singletrial.amplitude = amp;
+                else
+                    CAPSTEP_MEP_singletrial.subject(end + 1) = participant(p); 
+                    CAPSTEP_MEP_singletrial.session(end) = session(s); 
+                    CAPSTEP_MEP_singletrial.timepoint(end) = time(t); 
+                    CAPSTEP_MEP_singletrial.trial(end) = e; 
+                    CAPSTEP_MEP_singletrial.latency(end) = lat;
+                    CAPSTEP_MEP_singletrial.amplitude(end) = amp;
+                end
+            end             
+        end
+    end
+end
+
+% append output table to the general MATLAB file
+save(output_file, 'CAPSTEP_MEP_singletrial', '-append');
+
+clear p s t e data header x_start x_end y_max y_min x_max x_min lat amp
 
 %% 6) VISUALIZATION per session - not normalized 
 % load data

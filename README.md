@@ -41,10 +41,10 @@ EEG - TEPs
 - EEG_import_MEGA.m
 - EEG_history_import.mat
 - CAPSTEP_EEG_preprocess.lwscript
-- CAPSTEP_EEG_merge.m
 - CAPSTEP_EEG_ica_timecourse.lwscript
 - CAPSTEP_EEG_ica_FFT.lwscript
 - CAPSTEP_EEG_filter.lwscript
+- CAPSTEP_maintenance.m
 
 **TEP analysis:**
 - CAPSTEP_TEP_process.m
