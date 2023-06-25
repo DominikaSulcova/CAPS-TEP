@@ -495,9 +495,9 @@ for p = 1:length(participant)
             disp([num2str(n_epochs) ' epochs retained'])
         
             % encode to the output structure        
-            statement = ['CAPSTEP_info(participant(p)).epochs_removed.' condition{c} ' = epochs;'];
+            statement = ['CAPSTEP_info(participant(p)).epochs_removed.' condition{c} '(t, 1:length(epochs)) = epochs;'];
             eval(statement)
-            statement = ['CAPSTEP_info(participant(p)).epochs_n.' condition{c} ' = n_epochs;'];
+            statement = ['CAPSTEP_info(participant(p)).epochs_n.' condition{c} '(t) = n_epochs;'];
             eval(statement)   
         end
     end
@@ -631,7 +631,7 @@ for p = 1:length(participant)
             option = struct('operation', 'substract', 'xstart', baseline(1), 'xend', baseline(2), ...
                 'suffix', suffix{1}, 'is_save', 0);
             lwdata = FLW_baseline.get_lwdata(lwdata,option);
-
+            
             % average
             disp('Averaging...')
             option = struct('operation', 'average', 'suffix', suffix{2}, 'is_save', 1);
@@ -663,10 +663,6 @@ for p = 1:length(participant)
        subject = ['0' num2str(participant(p))];
     else
        subject = num2str(participant(p)); 
-    end
-    
-    % loop through datasets
-    for c = 1:length(condition)
     end
 end
 clear p c subject filename fileID nline EMG_ID statement

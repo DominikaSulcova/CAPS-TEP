@@ -292,8 +292,7 @@ for p = 1:length(participant)
             % extract amplitude and latency
             [y_mean, y_max, lat_peak] = TEP_amplitude(data_visual, center, span, percent, xstep, time_window(1), polarity);
 
-            % update the figure
-            
+            % update the figure            
             subplot(4, 6, 1:18)
             hold on
             for a = 1:size(data_visual, 1)
