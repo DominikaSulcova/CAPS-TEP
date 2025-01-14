@@ -37,6 +37,7 @@ else
     TEP_new = struct; 
     save(output_file, 'TEP_new')
 end
+fprintf('done.\n')
 
 % dataset
 params.condition = {'pain', 'control'};
@@ -389,6 +390,13 @@ for a = 1:length(params.condition)
         % update header
         header.datasize = size(data);
         header.name = sprintf('%s %s %s %s %s', params.suffix{5}, study, TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b});
+        code = header.events(1).code;
+        latency = header.events(1).latency;
+        for c = 1:dataset(a).processed(b).header.datasize(1)
+            header.events(c).code = code;
+            header.events(c).latency = latency;
+            header.events(c).epoch = c;
+        end
     
         % update dataset
         dataset(a).processed(b).header = header;
@@ -417,33 +425,31 @@ end
 
 % save and continue
 save(output_file, 'TEP_new','-append')
-clear data2load a b d f lwdata option channel_all channel_mask channels2keep header data concat_idx fig_all open
+clear data2load a b c d f lwdata option channel_all channel_mask channels2keep header data...
+    code latency concat_idx fig_all open
 fprintf('section 2 finished.\n')
 
 %% 3) re-reference and export to EEGLAB
 % ----- section input -----
 params.prefix = 'preprocessed';
 params.interp_chans = 6;
-params.ref = 'averef';
 % -------------------------
 fprintf('section 3: exporting to EEGLAB\n')
 
 % load output structure if needed 
 if exist('TEP_new') ~= 1
-    fprintf('loading output structure...\n')
+    fprintf('loading output structure... ')
     load(output_file, 'TEP_new')
 end
+fprintf('done.\n')
 
 % load dataset if needed
 if exist('dataset') ~= 1
-    fprintf('loading dataset...\n')
+    fprintf('loading dataset... ')
     data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
-    if length(data2load) == length(params.condition) * length(params.timepoint) * 2
-        dataset = reload_dataset(data2load, params.condition, 'processed');
-    else
-        error(sprintf('ERROR: Wrong number of datasets (%d) found in the directory!', length(data2load)/2))
-    end
+    dataset = reload_dataset(data2load, params.condition, 'processed');
 end
+fprintf('done.\n')
 
 % interpolate channels if needed
 params.labels = {dataset(1).processed(1).header.chanlocs.labels};
@@ -519,21 +525,15 @@ end
 % add letswave 7 to the top of search path
 addpath(genpath([folder.toolbox '\letswave 7']));
 
-% re-reference and save as .set
-fprintf('re-referencing and saving ...')
+% save as .set
+fprintf('saving for EEGLAB: ')
 for a = 1:length(params.condition)
     for d = 1:length(dataset(a).processed)
+        fprintf('. ')
+
         % select data
         lwdata.header = dataset(a).processed(d).header;
         lwdata.data = dataset(a).processed(d).data;
-
-        % re-reference to common average
-        option = struct('reference_list', {params.labels}, 'apply_list', {params.labels}, 'suffix', '', 'is_save', 0);
-        lwdata = FLW_rereference.get_lwdata(lwdata, option);
-        if a == 1 && d == 1
-            TEP_new(subject_idx).processing(10).process = sprintf('re-referenced to common average');
-            TEP_new(subject_idx).processing(10).date = sprintf('%s', date);
-        end
 
         % export 
         export_EEGLAB(lwdata, lwdata.header.name, TEP_new(subject_idx).ID);
@@ -548,12 +548,232 @@ fprintf('section 3 finished.\n')
 
 %% 4) SSP-SIR
 % ----- section input -----
+params.suffix = {'preprocessed' 'sspsir' 'ffilt' 'checked'};
+params.baseline = [-0.25 -0.006]; 
+params.time_range = [-0.005, 0.050];
+params.bandpass = [0.5, 80];
+params.plot_output = true;
+params.plot_toi = [-0.1 0.5];
 % -------------------------
 fprintf('section 4: SSP-SIR\n')
 
+% add eeglab to the top of search path and launch
+addpath(fullfile(folder.toolbox, 'EEGLAB'));
+eeglab
+
+% apply SSP-SIR separately on data from each each session 
+for a = 2:length(params.condition)
+    fprintf('%s condition:\n', params.condition{a})
+
+    % load all datasets, re-reference 
+    fprintf('loading dataset: ')
+    for b = 1:length(params.timepoint)
+        fprintf('. ')
+        % load dataset, re-reference  
+        name = sprintf('%s %s %s %s %s.set', params.suffix{1}, study, TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b}); 
+        EEG = pop_loadset('filename', name, 'filepath', folder.processed);
+        EEG.filename = name;
+        EEG.filepath = folder.processed;
+        EEG = pop_reref(EEG, []);
+        [ALLEEG EEG CURRENTSET] = eeg_store(ALLEEG, EEG, b);
+        eeglab redraw  
+        if a == 1 && b == 1
+            TEP_new(subject_idx).processing(10).process = 're-referenced to common average';
+            TEP_new(subject_idx).processing(10).date = sprintf('%s', date);
+        end
+        
+        % % visualize the average response
+        % figure(figure_counter); 
+        % pop_plottopo(pop_select(EEG, 'time', [-0.1 0.3]), [] , '', 0, 'ydir', 1, 'ylim', [-30 30]);
+        % sgtitle(sprintf('%s: %s - %s', TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b}))
+        % set(gcf, 'units', 'normalized', 'outerposition', [0 0 1 1])
+        % figure_counter = figure_counter + 1;
+    end
+    fprintf('done.\n')
+
+    % merge the data
+    fprintf('merging ...\n')
+    merged_EEG = pop_mergeset(ALLEEG, 1:length(ALLEEG), 0);
+
+    % apply SSP-SIR - spherical model 
+    fprintf('applying SSP-SIR ...\n')
+    merged_EEG = pop_tesa_sspsir(merged_EEG, 'artScale', 'manual', 'timeRange', params.time_range, 'PC', []);
+    prompt = {'number of rejected PCs:'};
+    dlgtitle = 'SSP-SIR';
+    dims = [1 40];
+    definput = {''};
+    input = inputdlg(prompt,dlgtitle,dims,definput);
+    if a == 1 
+        TEP_new(subject_idx).processing(11).process = 'muscular artifact removed using SSP-SIR';
+        TEP_new(subject_idx).processing(11).params.method = 'SSP-SIR';
+        TEP_new(subject_idx).processing(11).params.leadfield = 'default spherical';
+        TEP_new(subject_idx).processing(11).suffix = params.suffix{2};
+        TEP_new(subject_idx).processing(11).date = sprintf('%s', date);
+    end
+    TEP_new(subject_idx).processing(11).params.PC.condition = params.condition{a};
+    TEP_new(subject_idx).processing(11).params.PC.removed = str2num(input{1,1});
+
+    % split back to original datasets
+    idx_start = 1;
+    for b = 1:length(params.timepoint)
+        % identify number of epochs 
+        n_epochs = length(ALLEEG(b).event);
+
+        % extract epochs and update ALLEEG
+        EEG = pop_select(merged_EEG, 'trial', idx_start:(idx_start + n_epochs - 1));
+        
+        % save new dataset
+        name = sprintf('%s %s %s %s %s', params.suffix{2}, study, TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b}); 
+        EEG.setname = name;
+        EEG.filename = sprintf('%s.set', name);
+        pop_saveset(EEG, 'filename', name, 'filepath', folder.processed);
+    
+        % update starting index 
+        idx_start = idx_start + n_epochs;       
+    end
+    
+    % apply frequency filters, check bad trials
+    fprintf('final pre-processing:\n')
+    for b = 1:length(params.timepoint)
+        fprintf('%s - %s:\n', params.condition{a}, params.timepoint{b})
+
+        % load dataset
+        name = sprintf('%s %s %s %s %s.set', params.suffix{2}, study, TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b}); 
+        EEG = pop_loadset('filename', name, 'filepath', folder.processed);
+        [ALLEEG, EEG, b] = eeg_store(ALLEEG, EEG, b);
+        eeglab redraw 
+
+        % bandpass filter
+        EEG = pop_eegfiltnew(EEG, 'locutoff', params.bandpass(1), 'hicutoff', params.bandpass(2));
+
+        % notch filter
+        EEG = pop_eegfiltnew(EEG, 'locutoff', 49.5, 'hicutoff', 50.5, 'revfilt', 1); 
+
+        % check spectrum
+        pop_spectopo(EEG, 1, [], 'EEG', 'freqrange', [0 100]);
+
+        % encode to info structure
+        if a == 1 && b == 1
+            TEP_new(subject_idx).processing(12).process = sprintf('frequency filters applied');
+            TEP_new(subject_idx).processing(12).params.bandpass = params.bandpass;
+            TEP_new(subject_idx).processing(12).params.notch = 50;
+            TEP_new(subject_idx).processing(12).suffix = params.suffix{3};
+            TEP_new(subject_idx).processing(12).date = sprintf('%s', date);
+        end
+
+        % remove bad epochs
+        pop_eegplot(EEG, 1, 1, 1);
+        waitfor(gcf); 
+        EEG = eeg_checkset(EEG);
+
+        % encode bad epochs to info structure
+        answer = questdlg('Have you discarded any epochs?', 'Bad epochs',...
+            'YES', 'NO', 'NO');
+        if a == 1 && b == 1
+            TEP_new(subject_idx).processing(13).process = sprintf('bad trials discarded');
+            TEP_new(subject_idx).processing(13).params.GUI = 'EEGLAB';
+            TEP_new(subject_idx).processing(13).suffix = params.suffix{4};
+            TEP_new(subject_idx).processing(13).date = sprintf('%s', date);
+        end
+        switch answer
+            case 'YES'
+                for c = 1:length(ALLCOM)
+                    if contains(ALLCOM{c}, 'pop_rejepoch')
+                        match = regexp(ALLCOM{c}, '\[(.*?)\]', 'match');
+                        if ~isempty(match)
+                            discarded = str2num(match{1}(2:end-1)); 
+                        else
+                            discarded = []; 
+                        end
+                        break
+                    end
+                end
+            case 'NO'
+                discarded = []; 
+        end
+
+        TEP_new(subject_idx).processing(13).params.discarded{a, b} = discarded;
+
+        % update dataset and save for letswave
+        name = sprintf('%s %s %s %s %s %s %s %s', params.suffix{4}, params.suffix{3}, params.suffix{2},...
+            study, TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b}); 
+        lwdata = export_lw(EEG, dataset(a).processed(b).header, name);
+        dataset(a).sspsir(b).header = lwdata.header;
+        dataset(a).sspsir(b).data = lwdata.data;
+        header = lwdata.header;
+        data = lwdata.data;
+        save([name '.lw6'], 'header')
+        save([name '.mat'], 'data')
+        fprintf('\n')
+    end
+
+    % clear data strucure for next iteration
+    ALLEEG = []; 
+end
+
+% update figure counter
+fig_all = findall(0, 'Type', 'figure');
+figure_counter = length(fig_all) + 1;
+
+% plot the output figure
+if params.plot_output
+    % define common visual parameters
+    params.labels = {dataset(1).sspsir(1).header.chanlocs.labels};
+    visual.x = dataset(1).sspsir(1).header.xstart : dataset(1).sspsir(1).header.xstep : ...
+        dataset(1).sspsir(1).header.xstep * dataset(1).sspsir(1).header.datasize(6) + dataset(1).sspsir(1).header.xstart - dataset(1).sspsir(1).header.xstep;
+    visual.labels = {'original', 'filtered'};
+    visual.xlim = params.plot_toi;
+    visual.colors = [0.3333    0.4471    0.9020;
+                    1.0000    0.0745    0.6510];
+
+    % launch the figure
+    fig = figure(figure_counter);
+    set(fig, 'units', 'normalized', 'outerposition', [0 0 1 1])
+    hold on
+
+    % plot data
+    for a = 1:length(params.condition)
+        % identify EOI
+        if strcmp(TEP_new(subject_idx).stimulation(a).hemisphere, 'right')
+            visual.text  = 'C4';
+        elseif strcmp(TEP_new(subject_idx).stimulation(a).hemisphere, 'left')
+            visual.text  = 'C3';
+        end
+        eoi = find(strcmp(params.labels, visual.text));
+
+        % cycle through timepoints
+        for b = 1:length(params.timepoint)
+            % define t value
+            visual.t_value = tinv(0.975, size(dataset(a).processed(b).data, 1) - 1); 
+
+            % select original data
+            visual.data(1, :) = squeeze(mean(dataset(a).processed(b).data(:,eoi,1,1,1,:), 1));  
+            visual.sem(1, :) = squeeze(std(dataset(a).processed(b).data(:,eoi,1,1,1,:), 0, 1)) / sqrt(size(dataset(a).processed(b).data, 1)); 
+            visual.CI_upper(1, :) = visual.data(1, :) + visual.t_value * visual.sem(1, :); 
+            visual.CI_lower(1, :) = visual.data(1, :) - visual.t_value * visual.sem(1, :); 
+            
+            % select filtered data
+            visual.data(2, :) = squeeze(mean(dataset(a).sspsir(b).data(:,eoi,1,1,1,:), 1));  
+            visual.sem(2, :) = squeeze(std(dataset(a).sspsir(b).data(:,eoi,1,1,1,:), 0, 1)) / sqrt(size(dataset(a).sspsir(b).data, 1)); 
+            visual.CI_upper(2, :) = visual.data(2, :) + visual.t_value * visual.sem(2, :); 
+            visual.CI_lower(2, :) = visual.data(2, :) - visual.t_value * visual.sem(2, :); 
+            
+            % plot
+            subplot(length(params.condition), length(params.timepoint), (a-1)*length(params.timepoint) + b)
+            plot_ERP(visual, 'xlim', visual.xlim, 'colours', visual.colors, 'labels', visual.labels)
+            title(sprintf('%s - %s', params.condition{a}, params.timepoint{b}))
+        end
+    end
+
+    % save and update figure counter
+    saveas(fig, sprintf('%s\\figures\\SSPSIR_%s.png', folder.output, TEP_new(subject_idx).ID))
+    figure_counter = figure_counter + 1;
+end
+
 % save and continue
 save(output_file, 'TEP_new','-append')
-clear 
+clear a b c fig_all name match prompt discarded answer data header lwdata data2load definput dims dlgtitle eoi fig idx_start input latency code n_epochs ...
+    tmpEEG tmpstr visual ALLCOM ALLEEG CURRENTSET CURRENTSTUDY EEG merged_EEG globalvars LASTCOM PLUGINLIST STUDY
 fprintf('section 4 finished.\n')
 
 %% 5) ICA
@@ -581,51 +801,46 @@ function dataset = reload_dataset(data2load, conditions, fieldname)
 dataset = struct;
 
 % load all data
-dpc = length(data2load)/2/length(conditions);
-if mod(dpc, 1) == 0
-    for c = 1:length(conditions)
-        % note condition
-        dataset(c).condition = conditions{c}; 
+for c = 1:length(conditions)
+    % note condition
+    dataset(c).condition = conditions{c}; 
 
-        % subset header and data files
-        header_idx = logical([]);
-        data_idx = logical([]);
-        for d = 1:length(data2load)
-            if contains(data2load(d).name, conditions{c}) 
-                if contains(data2load(d).name, 'lw6') 
-                    header_idx(d) = true;
-                    data_idx(d) = false;
-                elseif contains(data2load(d).name, 'mat') 
-                    header_idx(d) = false;
-                    data_idx(d) = true;
-                end
-            else
-                header_idx(d) = false;
+    % subset header and data files
+    header_idx = logical([]);
+    data_idx = logical([]);
+    for d = 1:length(data2load)
+        if contains(data2load(d).name, conditions{c}) 
+            if contains(data2load(d).name, 'lw6') 
+                header_idx(d) = true;
                 data_idx(d) = false;
-            end
-        end
-        headers = data2load(header_idx);
-        datas = data2load(data_idx);
-
-        % load all dataset for this condition
-        if length(datas) == length(headers) && length(datas) == dpc
-            for d = 1:dpc
-                % load header
-                load(sprintf('%s\\%s', headers(d).folder, headers(d).name), '-mat')
-                statement = sprintf('dataset(c).%s(d).header = header;', fieldname);
-                eval(statement) 
-    
-                % load data
-                load(sprintf('%s\\%s', datas(d).folder, datas(d).name))
-                statement = sprintf('dataset(c).%s(d).data = data;', fieldname);
-                eval(statement) 
+            elseif contains(data2load(d).name, 'mat') 
+                header_idx(d) = false;
+                data_idx(d) = true;
             end
         else
-            error('ERROR: Wrong number of available datasets to load! Check manually.')
+            header_idx(d) = false;
+            data_idx(d) = false;
         end
     end
-else
-    error('ERROR: Wrong number of available datasets to load! Check manually.')
+    headers = data2load(header_idx);
+    datas = data2load(data_idx);
+
+    % load all dataset for this condition
+    if length(datas) == length(headers) 
+        for d = 1:length(datas)
+            % load header
+            load(sprintf('%s\\%s', headers(d).folder, headers(d).name), '-mat')
+            statement = sprintf('dataset(c).%s(d).header = header;', fieldname);
+            eval(statement) 
+
+            % load data
+            load(sprintf('%s\\%s', datas(d).folder, datas(d).name))
+            statement = sprintf('dataset(c).%s(d).data = data;', fieldname);
+            eval(statement) 
+        end
+    else
+        error('ERROR: Wrong number of available datasets to load! Check manually.')
+    end
 end
 end
 function export_EEGLAB(lwdata, filename, subj)
@@ -656,7 +871,7 @@ EEG.event = lwdata.header.events;
 if ~isempty(EEG.event)
     [EEG.event.type] = EEG.event.code;
     for e = 1:length(EEG.event)
-        EEG.event(e).latency = (e-1)*EEG.pnts + 2001;
+        EEG.event(e).latency = (e-1)*EEG.pnts + EEG.xmin*(-1)*EEG.srate;
     end
     EEG.event = rmfield(EEG.event,'code');
 end
@@ -670,4 +885,182 @@ EEG.icaweights = [];
 EEG.icaweights = [];
 EEG.icaweights = [];
 save([filename,'.set'], 'EEG');
+end
+function lwdata = export_lw(EEG, header, name)
+% =========================================================================
+% exports data from EEGLAB to letswave format
+% ========================================================================= 
+% transform data
+data = [];
+for t = 1:size(EEG.data, 3)
+    for e = 1:size(EEG.data, 1)
+        for i = 1:size(EEG.data, 2)
+            data(t, e, 1, 1, 1, i) = EEG.data(e, i, t);
+        end
+    end
+end
+lwdata.data = data;    
+    
+% modify header
+lwdata.header = header; 
+lwdata.header.name = name;
+lwdata.header.datasize = size(lwdata.data);
+lwdata.header.chanlocs = lwdata.header.chanlocs(1:size(lwdata.data, 2));
+lwdata.header.events = lwdata.header.events(1:size(lwdata.data, 1));
+end
+function plot_ERP(input, varargin)
+% =========================================================================
+% plots an event-related potential
+% input = structure with fields:    
+%           data --> condition/electrode * sample
+%           x --> vector with time samples
+%           CI_upper --> condition/electrode * sample
+%           CI_lower --> condition/electrode * sample
+% varargins = name-value pairs: 
+%           xlim --> 2-element vector (min, max)     
+%           ylim --> 2-element vector (min, max) 
+%           colours --> n*3 matrix of RGB values
+%           shading --> 'on'(default)/'off'
+%           alpha --> a float (default 0.2)           
+%           plot_legend --> 'on'(default)/'off'
+%           labels --> cell array with labels for the legend  
+%           legend_loc --> legend location (default 'southeast')
+%           eoi --> label of a channel to be highlighted
+%           reverse --> 'on'/'off'(default) - flips y axis
+% =========================================================================  
+% set defaults
+x_limits = [0,0];
+y_limits = [0,0];
+col = prism(size(input.data, 1));
+shading = true;
+alpha = 0.2;
+plot_legend = true;
+for c = 1:size(input.data, 1)
+    labels{c} = sprintf('condition %d', c);
+end
+legend_loc = 'southeast';
+highlight = false;
+reverse = false;
+
+% check for varargins
+if ~isempty(varargin)
+    % x limits
+    a = find(strcmpi(varargin, 'xlim'));
+    if ~isempty(a)
+        x_limits = varargin{a + 1};
+    end
+
+    % y limits
+    b = find(strcmpi(varargin, 'ylim'));
+    if ~isempty(b)
+        y_limits = varargin{b + 1};
+    end
+
+    % colours
+    c = find(strcmpi(varargin, 'colours'));
+    if ~isempty(c)
+        col = varargin{c + 1};
+    end
+
+    % shading - default on
+    d = find(strcmpi(varargin, 'shading'));
+    if ~isempty(d) && strcmp(varargin{d + 1}, 'off')
+        shading = false;
+    end
+
+    % alpha
+    e = find(strcmpi(varargin, 'alpha'));
+    if ~isempty(e)
+        alpha = varargin{e + 1};
+    end
+
+    % legend - default on
+    f = find(strcmpi(varargin, 'legend'));
+    if ~isempty(f) && strcmp(varargin{f + 1}, 'off')
+        plot_legend = false;
+    end    
+
+    % labels
+    g = find(strcmpi(varargin, 'labels'));
+    if ~isempty(g)
+        labels = varargin{g + 1};
+    end
+
+    % legend location
+    h = find(strcmpi(varargin, 'legend_loc'));
+    if ~isempty(h) 
+        legend_loc = varargin{h + 1};
+    end  
+
+    % highlighted channel - default off
+    i = find(strcmpi(varargin, 'eoi'));
+    if ~isempty(i)
+        eoi = varargin{i + 1};
+        highlight = true;
+    end 
+
+    % reverse y axis - default off
+    r = find(strcmpi(varargin, 'reverse'));
+    if ~isempty(r) && strcmp(varargin{r + 1}, 'on')
+        reverse = true;
+    end
+end
+
+% loop through datasets to plot
+for t = 1:size(input.data, 1) 
+    P(t) = plot(input.x, input.data(t, :), 'Color', col(t, :), 'LineWidth', 2);
+    hold on
+    if shading
+        F(t) = fill([input.x fliplr(input.x)],[input.CI_upper(t, :) fliplr(input.CI_lower(t, :))], ...
+            col(t, :), 'FaceAlpha', alpha, 'linestyle', 'none');
+        hold on
+    end
+end
+
+% check y limits
+if y_limits(1) == 0 && y_limits(2) == 0
+    y_limits = ylim;
+end
+
+% plot stimulus
+line([0, 0], y_limits, 'Color', 'black', 'LineWidth', 2.5, 'LineStyle', '--')
+
+% highlight channel if required
+if highlight
+    P(end + 1) = plot(input.x, input.data(eoi, :), 'Color', [0.9216    0.1490    0.1490], 'LineWidth', 3);
+end
+
+% plot legend if required
+if plot_legend 
+    legend(P, labels, 'Location', legend_loc, 'fontsize', 14)
+    legend('boxoff');
+end
+
+% axes
+box off;
+ax = gca;
+ax.XAxisLocation = 'bottom';
+ax.YAxisLocation = 'left';
+ax.TickDir = 'out'; 
+ax.XColor = [0.5020    0.5020    0.5020]; 
+ax.YColor = [0.5020    0.5020    0.5020]; 
+
+% set x limits 
+if x_limits(1) == 0 && x_limits(2) == 0
+    xlim([input.x(1), input.x(end)]) 
+else
+    xlim(x_limits)
+end
+
+% referse y axis if required
+if reverse
+    set(gca, 'YDir', 'reverse');
+end
+
+% other parameters
+xlabel('time (ms)')
+ylabel('amplitude (\muV)')
+set(gca, 'FontSize', 14)
+ylim(y_limits)
+set(gca, 'Layer', 'Top')
 end
