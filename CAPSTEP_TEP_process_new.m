@@ -255,7 +255,7 @@ end
 save(output_file, 'TEP_new','-append')
 clear a b c d e f data2import dataset_idx files2import data_idx data2load file_idx filename ...
     option lwdata event_idx epoch_idx concat_idx data header open fig_all
-fprintf('section 1 finished.\n')
+fprintf('section 1 finished\n')
 
 %% 2) segment and pre-process for visual inspection
 % ----- section input -----
@@ -356,7 +356,7 @@ for a = 1:length(params.condition)
         dataset(a).raw(d).data = data; 
     end
 end
-fprintf('done.\n')
+fprintf('done\n')
 fprintf('\n')
 
 % concatenate blocks into timepoints
@@ -392,7 +392,7 @@ for a = 1:length(params.condition)
         header.name = sprintf('%s %s %s %s %s', params.suffix{5}, study, TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b});
         code = header.events(1).code;
         latency = header.events(1).latency;
-        for c = 1:dataset(a).processed(b).header.datasize(1)
+        for c = 1:header.datasize(1)
             header.events(c).code = code;
             header.events(c).latency = latency;
             header.events(c).epoch = c;
@@ -407,7 +407,7 @@ for a = 1:length(params.condition)
         save([header.name '.mat'], 'data')
     end
 end
-fprintf('done.\n')
+fprintf('done\n')
 fprintf('\n')
 
 % open letswave for visual check
@@ -427,7 +427,7 @@ end
 save(output_file, 'TEP_new','-append')
 clear data2load a b c d f lwdata option channel_all channel_mask channels2keep header data...
     code latency concat_idx fig_all open
-fprintf('section 2 finished.\n')
+fprintf('section 2 finished\n')
 
 %% 3) re-reference and export to EEGLAB
 % ----- section input -----
@@ -436,20 +436,13 @@ params.interp_chans = 6;
 % -------------------------
 fprintf('section 3: exporting to EEGLAB\n')
 
-% load output structure if needed 
-if exist('TEP_new') ~= 1
-    fprintf('loading output structure... ')
-    load(output_file, 'TEP_new')
-end
-fprintf('done.\n')
-
 % load dataset if needed
 if exist('dataset') ~= 1
     fprintf('loading dataset... ')
     data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
     dataset = reload_dataset(data2load, params.condition, 'processed');
 end
-fprintf('done.\n')
+fprintf('done\n')
 
 % interpolate channels if needed
 params.labels = {dataset(1).processed(1).header.chanlocs.labels};
@@ -539,31 +532,39 @@ for a = 1:length(params.condition)
         export_EEGLAB(lwdata, lwdata.header.name, TEP_new(subject_idx).ID);
     end
 end
-fprintf('done.\n')
+fprintf('done\n')
 
 % save and continue
 save(output_file, 'TEP_new','-append')
 clear a b c d prompt dlgtitle dims definput answer chans2interpolate chan_n chan_dist chan_idx chans2use lwdata option    
-fprintf('section 3 finished.\n')
+fprintf('section 3 finished\n')
 
 %% 4) SSP-SIR
 % ----- section input -----
-params.suffix = {'preprocessed' 'sspsir' 'ffilt' 'checked'};
+params.prefix = 'preprocessed';
+params.suffix = {'preprocessed' 'sspsir' 'ffilt'};
 params.baseline = [-0.25 -0.006]; 
-params.time_range = [-0.005, 0.050];
 params.bandpass = [0.5, 80];
 params.plot_output = true;
 params.plot_toi = [-0.1 0.5];
 % -------------------------
 fprintf('section 4: SSP-SIR\n')
 
+% load dataset if needed
+if exist('dataset') ~= 1
+    fprintf('loading dataset... ')
+    data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
+    dataset = reload_dataset(data2load, params.condition, 'processed');
+end
+fprintf('done\n')
+
 % add eeglab to the top of search path and launch
 addpath(fullfile(folder.toolbox, 'EEGLAB'));
 eeglab
 
 % apply SSP-SIR separately on data from each each session 
-for a = 2:length(params.condition)
-    fprintf('%s condition:\n', params.condition{a})
+for a = 1:length(params.condition)
+    fprintf('\n ======================== %s session ========================\n', params.condition{a})
 
     % load all datasets, re-reference 
     fprintf('loading dataset: ')
@@ -597,7 +598,7 @@ for a = 2:length(params.condition)
 
     % apply SSP-SIR - spherical model 
     fprintf('applying SSP-SIR ...\n')
-    merged_EEG = pop_tesa_sspsir(merged_EEG, 'artScale', 'manual', 'timeRange', params.time_range, 'PC', []);
+    merged_EEG = pop_tesa_sspsir(merged_EEG, 'artScale', 'automatic', 'PC', []);
     prompt = {'number of rejected PCs:'};
     dlgtitle = 'SSP-SIR';
     dims = [1 40];
@@ -632,7 +633,7 @@ for a = 2:length(params.condition)
         idx_start = idx_start + n_epochs;       
     end
     
-    % apply frequency filters, check bad trials
+    % apply frequency filters and save
     fprintf('final pre-processing:\n')
     for b = 1:length(params.timepoint)
         fprintf('%s - %s:\n', params.condition{a}, params.timepoint{b})
@@ -649,8 +650,8 @@ for a = 2:length(params.condition)
         % notch filter
         EEG = pop_eegfiltnew(EEG, 'locutoff', 49.5, 'hicutoff', 50.5, 'revfilt', 1); 
 
-        % check spectrum
-        pop_spectopo(EEG, 1, [], 'EEG', 'freqrange', [0 100]);
+        % % check spectrum
+        % pop_spectopo(EEG, 1, [], 'EEG', 'freqrange', [0 100]);
 
         % encode to info structure
         if a == 1 && b == 1
@@ -661,41 +662,8 @@ for a = 2:length(params.condition)
             TEP_new(subject_idx).processing(12).date = sprintf('%s', date);
         end
 
-        % remove bad epochs
-        pop_eegplot(EEG, 1, 1, 1);
-        waitfor(gcf); 
-        EEG = eeg_checkset(EEG);
-
-        % encode bad epochs to info structure
-        answer = questdlg('Have you discarded any epochs?', 'Bad epochs',...
-            'YES', 'NO', 'NO');
-        if a == 1 && b == 1
-            TEP_new(subject_idx).processing(13).process = sprintf('bad trials discarded');
-            TEP_new(subject_idx).processing(13).params.GUI = 'EEGLAB';
-            TEP_new(subject_idx).processing(13).suffix = params.suffix{4};
-            TEP_new(subject_idx).processing(13).date = sprintf('%s', date);
-        end
-        switch answer
-            case 'YES'
-                for c = 1:length(ALLCOM)
-                    if contains(ALLCOM{c}, 'pop_rejepoch')
-                        match = regexp(ALLCOM{c}, '\[(.*?)\]', 'match');
-                        if ~isempty(match)
-                            discarded = str2num(match{1}(2:end-1)); 
-                        else
-                            discarded = []; 
-                        end
-                        break
-                    end
-                end
-            case 'NO'
-                discarded = []; 
-        end
-
-        TEP_new(subject_idx).processing(13).params.discarded{a, b} = discarded;
-
         % update dataset and save for letswave
-        name = sprintf('%s %s %s %s %s %s %s %s', params.suffix{4}, params.suffix{3}, params.suffix{2},...
+        name = sprintf('%s %s %s %s %s %s %s %s', params.suffix{3}, params.suffix{2},...
             study, TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b}); 
         lwdata = export_lw(EEG, dataset(a).processed(b).header, name);
         dataset(a).sspsir(b).header = lwdata.header;
@@ -770,24 +738,321 @@ if params.plot_output
     figure_counter = figure_counter + 1;
 end
 
+% open letswave if not already open
+addpath(genpath([folder.toolbox '\letswave 6']));
+fig_all = findall(0, 'Type', 'figure');
+open = true;
+for f = 1:length(fig_all)
+    if contains(get(fig_all(f), 'Name'), 'Letswave', 'IgnoreCase', true)
+        open = false;
+        break;
+    end
+end
+if open
+    letswave
+end
+
 % save and continue
 save(output_file, 'TEP_new','-append')
-clear a b c fig_all name match prompt discarded answer data header lwdata data2load definput dims dlgtitle eoi fig idx_start input latency code n_epochs ...
-    tmpEEG tmpstr visual ALLCOM ALLEEG CURRENTSET CURRENTSTUDY EEG merged_EEG globalvars LASTCOM PLUGINLIST STUDY
-fprintf('section 4 finished.\n')
+clear a b c f fig_all name match prompt discarded answer data header lwdata data2load definput dims dlgtitle eoi fig idx_start input latency code ...
+    n_epochs open tmpEEG tmpstr visual ALLCOM ALLEEG CURRENTSET CURRENTSTUDY EEG merged_EEG globalvars LASTCOM PLUGINLIST STUDY
+fprintf('section 4 finished\nplease check for bad trials now\n\n')
 
 %% 5) ICA
 % ----- section input -----
+params.prefix = 'ar ffilt sspsir';
+params.suffix = {'ar' 'ica'};
+params.ICA_comp = 25;
 % -------------------------
 fprintf('section 5: ICA\n')
 
+% load dataset with bad trials removed
+fprintf('loading dataset... ')
+if exist('dataset') ~= 1
+    % load previous dataset
+    data2load = dir(sprintf('%s*%s*', params.prefix(4:end), TEP_new(subject_idx).ID));
+    dataset = reload_dataset(data2load, params.condition, 'sspsir');
+
+    % append new dataset
+    dataset_old = dataset;
+    data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
+    dataset = reload_dataset(data2load, params.condition, 'checked');
+    for a = 1:length(params.condition)
+        dataset(a).sspsir = dataset_old(a).sspsir;
+    end
+    clear dataset_old
+else
+    % append new dataset
+    dataset_old = dataset;
+    data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
+    dataset = reload_dataset(data2load, params.condition, 'checked');
+    for a = 1:length(params.condition)
+        dataset(a).sspsir = dataset_old(a).sspsir;
+    end
+    clear dataset_old
+end
+fprintf('done\n')
+
+% encode bad trials
+check = true;
+while check
+    % ask for bad trials
+    if exist('input_old') ~= 1
+        for a = 1:length(params.condition)
+            for b = 1:length(params.timepoint)
+                prompt{(a-1)*length(params.timepoint) + b} = sprintf('%s - %s', params.condition{a}, params.timepoint{b});
+                definput{(a-1)*length(params.timepoint) + b} = '';
+            end
+        end
+        dlgtitle = 'bad trials';
+        dims = [1 60];
+        input = inputdlg(prompt,dlgtitle,dims,definput);
+    else
+        for a = 1:length(params.condition)
+            for b = 1:length(params.timepoint)
+                prompt{(a-1)*length(params.timepoint) + b} = sprintf('%s - %s', params.condition{a}, params.timepoint{b});
+                definput{(a-1)*length(params.timepoint) + b} = input_old{(a-1)*length(params.timepoint) + b};
+            end
+        end
+        dlgtitle = 'bad trials';
+        dims = [1 60];
+        input = inputdlg(prompt,dlgtitle,dims,definput);
+    end
+
+    % verify if the numbers match
+    for a = 1:length(params.condition)
+        for b = 1:length(params.timepoint)
+            discarded = str2num(input{(a-1)*length(params.timepoint) + b});
+            if size(dataset(a).sspsir(b).data, 1) - length(discarded) == size(dataset(a).checked(b).data, 1)
+                match(a, b) = 0; 
+            else
+                match(a, b) = 1; 
+            end
+        end
+    end
+    
+    % encode if match
+    if sum(match, 'all') == 0
+        % encode 
+        fprintf('encoding bad trials... ')
+        TEP_new(subject_idx).processing(13).process = sprintf('bad trials discarded');
+        TEP_new(subject_idx).processing(13).params.GUI = 'letswave';
+        TEP_new(subject_idx).processing(13).suffix = params.suffix{1};
+        TEP_new(subject_idx).processing(13).date = sprintf('%s', date);
+        for a = 1:length(params.condition)
+            for b = 1:length(params.timepoint)
+                TEP_new(subject_idx).processing(13).params.discarded{a, b} = str2num(input{(a-1)*length(params.timepoint) + b});
+                TEP_new(subject_idx).processing(13).params.kept(a, b) = size(dataset(a).checked(b).data, 1);
+            end
+        end
+
+        % exit the loop
+        check = false;
+    else
+        % provide information
+        fprintf('ATTENTION - in following datasets the number of retained epochs does not match the number of discarded expochs:\n')
+        for a = 1:length(params.condition)
+            for b = 1:length(params.timepoint)
+                if match(a, b) == 1
+                    fprintf('%s - %s\n', params.condition{a}, params.timepoint{b})
+                end
+            end
+        end
+        fprintf('please correct your input\n')
+
+        % store previous responses
+        input_old = input;
+    end
+end
+fprintf('done\n')
+
+% add letswave 7 to the top of search path
+addpath(genpath([folder.toolbox '\letswave 7']));
+
+% compute ICA matrix and save for letswave
+for a = 1:length(params.condition)
+    fprintf('\n ======================== %s session ========================\n', params.condition{a})
+
+    % select dataset
+    lwdataset = dataset(a).checked;
+
+    % compute ICA and save  
+    fprintf('computing ICA matrix:\n')
+    option = struct('ICA_mode', 2, 'algorithm', 1, 'num_ICs', params.ICA_comp, 'suffix', params.suffix{2}, 'is_save', 1);
+    lwdataset = FLW_compute_ICA_merged.get_lwdataset(lwdataset, option);
+    fprintf('done\n')
+
+    % extract ICA parameters
+    matrix(a).condition = params.condition{a};
+    matrix(a).mix = lwdataset(1).header.history(end).option.mix_matrix;
+    matrix(a).unmix = lwdataset(1).header.history(end).option.unmix_matrix;    
+    if a == 1
+        params.ICA_chanlocs = lwdataset(1).header.chanlocs;
+        for i = 1:size(matrix(a).mix, 2)
+            params.ICA_labels{i} = ['IC',num2str(i)];
+        end
+        params.ICA_SR = 1/lwdataset(1).header.xstep;
+    end
+
+    % update dataset and adjust for letswave 6
+    dataset(a).ica = lwdataset;
+    for b = 1:length(params.timepoint)
+        dataset(a).ica(b).header.history(10).configuration.gui_info.function_name = 'LW_ICA_compute_merged';  
+        dataset(a).ica(b).header.history(10).configuration.parameters = dataset(a).ica(b).header.history(10).option;  
+        [dataset(a).ica(b).header.history(10).configuration.parameters.ICA_um] = dataset(a).ica(b).header.history(10).configuration.parameters.unmix_matrix; 
+        [dataset(a).ica(b).header.history(10).configuration.parameters.ICA_mm] = dataset(a).ica(b).header.history(10).configuration.parameters.mix_matrix; 
+        dataset(a).ica(b).header.history(10).configuration.parameters = rmfield(dataset(a).ica(b).header.history(10).configuration.parameters, {'unmix_matrix' 'mix_matrix'}); 
+    end
+
+    % unmix data
+    for b = 1:length(dataset(a).ica)
+        for e = 1:size(dataset(a).ica(b).data, 1)
+            dataset(a).unmixed(b).header = dataset(a).ica(b).header;
+            dataset(a).unmixed(b).data(e, :, 1, 1, 1, :) = matrix(a).unmix * squeeze(dataset(a).ica(b).data(e, :, 1, 1, 1, :));        
+        end
+    end
+end
+
+% update info structure
+TEP_new(subject_idx).processing(14).process = 'ICA matrix computed';
+TEP_new(subject_idx).processing(14).params.method = 'runica';
+TEP_new(subject_idx).processing(14).params.components = params.ICA_comp;
+TEP_new(subject_idx).processing(14).params.chanlocs = params.ICA_chanlocs;
+TEP_new(subject_idx).processing(14).params.labels = params.ICA_labels;
+TEP_new(subject_idx).processing(14).params.SR = params.ICA_SR;
+TEP_new(subject_idx).processing(14).params.matrix = matrix;
+TEP_new(subject_idx).processing(14).suffix = params.suffix{2};
+TEP_new(subject_idx).processing(14).date = sprintf('%s', date);
+
+% plot IC spectral content separately for each session
+fprintf('estimating spectral content:\n')
+for a = 1:length(params.condition)
+    fprintf('estimating spectral content:\n')
+
+    % calculate PSD across all timepoints, components and trials 
+    psd = [];
+    for b = 1:length(params.timepoint)
+        for c = 1:params.ICA_comp
+            for e = 1:size(dataset(a).unmixed(b).data, 1)
+                [psd(b, c, e, :), freq] = pwelch(squeeze(dataset(a).unmixed(b).data(e, c, 1, 1, 1, :)), ...
+                    [], [], [], TEP_new(subject_idx).processing(14).params.SR);  
+            end
+        end
+    end
+    TEP_new(subject_idx).processing(14).params.PSD = squeeze(mean(psd, [1, 3]));
+
+    % plot component topographies and spectral content
+    figure('units','normalized','outerposition',[0 0 1 1]);
+    hold on
+    for f = 1:params.ICA_comp
+        % plot the topography
+        matrix = TEP_new(subject_idx).processing(14).params.matrix(a).mix;
+        labels = {dataset(1).ica(1).header.chanlocs.labels};
+        subplot(ceil(params.ICA_comp/3), 6, (f-1)*2 + 1);
+        topoplot(double(matrix(:, f)'), params.ICA_chanlocs, 'maplimits', [-4 4], 'shading', 'interp', 'whitebk', 'on', 'electrodes', 'off')
+        set(gca,'color',[1 1 1]);
+        title(params.ICA_labels{f})
+    
+        % plot the psd
+        subplot(ceil(params.ICA_comp/3), 6, (f-1)*2 + 2);
+        plot(freq(1:82), log10(TEP_new(subject_idx).processing(14).params.PSD(f, 1:82)));
+        xlabel('Frequency (Hz)');
+        ylabel('Power (dB)');
+    end
+    sgtitle(sprintf('%s - %s session', TEP_new(subject_idx).ID, params.condition{a}))
+    saveas(gcf, sprintf('%s\\figures\\ICA_%s_%s.png', folder.output, TEP_new(subject_idx).ID, params.condition{a}));
+end
+fprintf('done\n')
+
+% open letswave 6 
+addpath(genpath([folder.toolbox '\letswave 6']));
+letswave
+
 % save and continue
 save(output_file, 'TEP_new','-append')
-clear 
-fprintf('section 5 finished.\n')
+clear a b c d e f i data2load check discarded match prompt definput input input_old dims dlgtitle matrix fig_all open ...
+    psd freq option lwdataset labels header
+fprintf('section 5 finished.please procede to ICA now\n\n')
 
-%% 6) group statistics
-%% 7) visualization
+%% 6) encode ICA
+% ----- section input -----
+params.suffix = {'icfilt'};
+params.ICA_comp = 25;
+% -------------------------
+fprintf('section 6: encode ICA\n')
+
+% encode 
+TEP_new(subject_idx).processing(15).process = 'artifactual ICs discarded';
+TEP_new(subject_idx).processing(15).suffix = params.suffix{1};
+TEP_new(subject_idx).processing(15).date = sprintf('%s', date);
+for a = 1:length(params.condition)
+    % ask for the input
+    prompt = {'blinks:', 'horizontal:', 'TMS:', 'muscles:', 'slow artifacts:'};
+    dlgtitle = sprintf('ICA - %s session', params.condition{a});  
+    dims = [1 60];
+    definput = {'', '', '', '', ''};
+    input = inputdlg(prompt,dlgtitle,dims,definput);
+
+    % encode
+    TEP_new(subject_idx).processing(15).params.kept(a).condition = params.condition{a};
+    TEP_new(subject_idx).processing(15).params.kept(a).components = params.ICA_comp - length([str2num(input{1}), str2num(input{2}), str2num(input{3}), str2num(input{4}), str2num(input{5})]);
+    TEP_new(subject_idx).processing(15).params.removed(a).condition = params.condition{a};
+    TEP_new(subject_idx).processing(15).params.removed(a).blinks = str2num(input{1});
+    TEP_new(subject_idx).processing(15).params.removed(a).horizontal = str2num(input{2});
+    TEP_new(subject_idx).processing(15).params.removed(a).TMS = str2num(input{3});
+    TEP_new(subject_idx).processing(15).params.removed(a).muscles = str2num(input{4});
+    TEP_new(subject_idx).processing(15).params.removed(a).slow = str2num(input{5});
+end
+save(output_file, 'TEP_new', '-append')
+fprintf('section 6 finished.\n')
+
+% ask for continuation
+answer = questdlg('Do you want to continue with next subject?', 'Continue?', 'YES', 'NO', 'YES'); 
+if strcmp(answer, 'YES')
+    subject_idx = subject_idx + 1;
+end
+clear a prompt definput input dims dlgtitle answer
+
+%% group statistics
+%% visualization
+%% code scraps
+% remove bad epochs in EEGLAB
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)
+        pop_eegplot(EEG, 1, 1, 1);
+        waitfor(gcf); 
+        EEG = eeg_checkset(EEG);
+        
+        % encode bad epochs to info structure
+        answer = questdlg('Have you discarded any epochs?', 'Bad epochs',...
+            'YES', 'NO', 'NO');
+        if a == 1 && b == 1
+            TEP_new(subject_idx).processing(13).process = sprintf('bad trials discarded');
+            TEP_new(subject_idx).processing(13).params.GUI = 'EEGLAB';
+            TEP_new(subject_idx).processing(13).suffix = params.suffix{4};
+            TEP_new(subject_idx).processing(13).date = sprintf('%s', date);
+        end
+        switch answer
+            case 'YES'
+                for c = 1:length(ALLCOM)
+                    if contains(ALLCOM{c}, 'pop_rejepoch')
+                        match = regexp(ALLCOM{c}, '\[(.*?)\]', 'match');
+                        if ~isempty(match)
+                            discarded = str2num(match{1}(2:end-1)); 
+                        else
+                            discarded = []; 
+                        end
+                        break
+                    end
+                end
+            case 'NO'
+                discarded = []; 
+        end
+        
+        TEP_new(subject_idx).processing(13).params.discarded{a, b} = discarded;
+    end
+end
+
 %% functions
 function dataset = reload_dataset(data2load, conditions, fieldname)
 % =========================================================================
