@@ -407,8 +407,8 @@ for a = 1:length(params.condition)
         save([header.name '.mat'], 'data')
     end
 end
-fprintf('done\n')
-fprintf('\n')
+fprintf('done\n\n')
+
 
 % open letswave for visual check
 fig_all = findall(0, 'Type', 'figure');
@@ -422,6 +422,7 @@ end
 if open
     letswave
 end
+fprintf('\n')
 
 % save and continue
 save(output_file, 'TEP_new','-append')
@@ -532,7 +533,7 @@ for a = 1:length(params.condition)
         export_EEGLAB(lwdata, lwdata.header.name, TEP_new(subject_idx).ID);
     end
 end
-fprintf('done\n')
+fprintf('done\n\n')
 
 % save and continue
 save(output_file, 'TEP_new','-append')
@@ -751,10 +752,11 @@ end
 if open
     letswave
 end
+fprintf('\n')
 
 % save and continue
 save(output_file, 'TEP_new','-append')
-clear a b c f fig_all name match prompt discarded answer data header lwdata data2load definput dims dlgtitle eoi fig idx_start input latency code ...
+clear a b c f e fig_all name match prompt discarded answer data header lwdata data2load definput dims dlgtitle eoi fig idx_start input latency code ...
     n_epochs open tmpEEG tmpstr visual ALLCOM ALLEEG CURRENTSET CURRENTSTUDY EEG merged_EEG globalvars LASTCOM PLUGINLIST STUDY
 fprintf('section 4 finished\nplease check for bad trials now\n\n')
 
@@ -794,74 +796,26 @@ end
 fprintf('done\n')
 
 % encode bad trials
-check = true;
-while check
-    % ask for bad trials
-    if exist('input_old') ~= 1
-        for a = 1:length(params.condition)
-            for b = 1:length(params.timepoint)
-                prompt{(a-1)*length(params.timepoint) + b} = sprintf('%s - %s', params.condition{a}, params.timepoint{b});
-                definput{(a-1)*length(params.timepoint) + b} = '';
-            end
-        end
-        dlgtitle = 'bad trials';
-        dims = [1 60];
-        input = inputdlg(prompt,dlgtitle,dims,definput);
-    else
-        for a = 1:length(params.condition)
-            for b = 1:length(params.timepoint)
-                prompt{(a-1)*length(params.timepoint) + b} = sprintf('%s - %s', params.condition{a}, params.timepoint{b});
-                definput{(a-1)*length(params.timepoint) + b} = input_old{(a-1)*length(params.timepoint) + b};
-            end
-        end
-        dlgtitle = 'bad trials';
-        dims = [1 60];
-        input = inputdlg(prompt,dlgtitle,dims,definput);
-    end
+fprintf('encoding bad trials... ')
+TEP_new(subject_idx).processing(13).process = sprintf('bad trials discarded');
+TEP_new(subject_idx).processing(13).params.GUI = 'letswave';
+TEP_new(subject_idx).processing(13).suffix = params.suffix{1};
+TEP_new(subject_idx).processing(13).date = sprintf('%s', date);
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)
+        % load header
+        load(sprintf('%s %s %s %s %s .lw6', params.prefix, study, TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b}), '-mat') 
 
-    % verify if the numbers match
-    for a = 1:length(params.condition)
-        for b = 1:length(params.timepoint)
-            discarded = str2num(input{(a-1)*length(params.timepoint) + b});
-            if size(dataset(a).sspsir(b).data, 1) - length(discarded) == size(dataset(a).checked(b).data, 1)
-                match(a, b) = 0; 
-            else
-                match(a, b) = 1; 
+        % extract discarded expochs
+        if ~isempty(header.history(end).configuration)
+            if ~isempty(header.history(end).configuration.parameters.rejected_epochs)
+                discarded = header.history(end).configuration.parameters.rejected_epochs;
             end
         end
-    end
-    
-    % encode if match
-    if sum(match, 'all') == 0
+
         % encode 
-        fprintf('encoding bad trials... ')
-        TEP_new(subject_idx).processing(13).process = sprintf('bad trials discarded');
-        TEP_new(subject_idx).processing(13).params.GUI = 'letswave';
-        TEP_new(subject_idx).processing(13).suffix = params.suffix{1};
-        TEP_new(subject_idx).processing(13).date = sprintf('%s', date);
-        for a = 1:length(params.condition)
-            for b = 1:length(params.timepoint)
-                TEP_new(subject_idx).processing(13).params.discarded{a, b} = str2num(input{(a-1)*length(params.timepoint) + b});
-                TEP_new(subject_idx).processing(13).params.kept(a, b) = size(dataset(a).checked(b).data, 1);
-            end
-        end
-
-        % exit the loop
-        check = false;
-    else
-        % provide information
-        fprintf('ATTENTION - in following datasets the number of retained epochs does not match the number of discarded expochs:\n')
-        for a = 1:length(params.condition)
-            for b = 1:length(params.timepoint)
-                if match(a, b) == 1
-                    fprintf('%s - %s\n', params.condition{a}, params.timepoint{b})
-                end
-            end
-        end
-        fprintf('please correct your input\n')
-
-        % store previous responses
-        input_old = input;
+        TEP_new(subject_idx).processing(13).params.discarded{a, b} = discarded;
+        TEP_new(subject_idx).processing(13).params.kept(a, b) = size(dataset(a).checked(b).data, 1);
     end
 end
 fprintf('done\n')
@@ -1053,6 +1007,77 @@ for a = 1:length(params.condition)
     end
 end
 
+% encode bad trials
+check = true;
+while check
+    % ask for bad trials
+    if exist('input_old') ~= 1
+        for a = 1:length(params.condition)
+            for b = 1:length(params.timepoint)
+                prompt{(a-1)*length(params.timepoint) + b} = sprintf('%s - %s', params.condition{a}, params.timepoint{b});
+                definput{(a-1)*length(params.timepoint) + b} = '';
+            end
+        end
+        dlgtitle = 'bad trials';
+        dims = [1 60];
+        input = inputdlg(prompt,dlgtitle,dims,definput);
+    else
+        for a = 1:length(params.condition)
+            for b = 1:length(params.timepoint)
+                prompt{(a-1)*length(params.timepoint) + b} = sprintf('%s - %s', params.condition{a}, params.timepoint{b});
+                definput{(a-1)*length(params.timepoint) + b} = input_old{(a-1)*length(params.timepoint) + b};
+            end
+        end
+        dlgtitle = 'bad trials';
+        dims = [1 60];
+        input = inputdlg(prompt,dlgtitle,dims,definput);
+    end
+
+    % verify if the numbers match
+    for a = 1:length(params.condition)
+        for b = 1:length(params.timepoint)
+            discarded = str2num(input{(a-1)*length(params.timepoint) + b});
+            if size(dataset(a).sspsir(b).data, 1) - length(discarded) == size(dataset(a).checked(b).data, 1)
+                match(a, b) = 0; 
+            else
+                match(a, b) = 1; 
+            end
+        end
+    end
+    
+    % encode if match
+    if sum(match, 'all') == 0
+        % encode 
+        fprintf('encoding bad trials... ')
+        TEP_new(subject_idx).processing(13).process = sprintf('bad trials discarded');
+        TEP_new(subject_idx).processing(13).params.GUI = 'letswave';
+        TEP_new(subject_idx).processing(13).suffix = params.suffix{1};
+        TEP_new(subject_idx).processing(13).date = sprintf('%s', date);
+        for a = 1:length(params.condition)
+            for b = 1:length(params.timepoint)
+                TEP_new(subject_idx).processing(13).params.discarded{a, b} = str2num(input{(a-1)*length(params.timepoint) + b});
+                TEP_new(subject_idx).processing(13).params.kept(a, b) = size(dataset(a).checked(b).data, 1);
+            end
+        end
+
+        % exit the loop
+        check = false;
+    else
+        % provide information
+        fprintf('ATTENTION - in following datasets the number of retained epochs does not match the number of discarded expochs:\n')
+        for a = 1:length(params.condition)
+            for b = 1:length(params.timepoint)
+                if match(a, b) == 1
+                    fprintf('%s - %s\n', params.condition{a}, params.timepoint{b})
+                end
+            end
+        end
+        fprintf('please correct your input\n')
+
+        % store previous responses
+        input_old = input;
+    end
+end
 %% functions
 function dataset = reload_dataset(data2load, conditions, fieldname)
 % =========================================================================
