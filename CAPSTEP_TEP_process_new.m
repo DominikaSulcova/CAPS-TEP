@@ -255,7 +255,7 @@ end
 save(output_file, 'TEP_new','-append')
 clear a b c d e f data2import dataset_idx files2import data_idx data2load file_idx filename ...
     option lwdata event_idx epoch_idx concat_idx data header open fig_all
-fprintf('section 1 finished\n')
+fprintf('section 1 finished\n\n')
 
 %% 2) segment and pre-process for visual inspection
 % ----- section input -----
@@ -273,11 +273,12 @@ if exist('TEP_new') ~= 1
 end
 
 % load dataset if needed
-fprintf('loading dataset...\n')
 if exist('dataset') ~= 1
+    fprintf('loading dataset...\n')
     data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
     if length(data2load) == length(params.condition) * length(params.timepoint) * length(params.block) * 2
         dataset = reload_dataset(data2load, params.condition, 'raw');
+        fprintf('done\n')
     else
         error(sprintf('ERROR: Wrong number of datasets (%d) found in the directory!', length(data2load)/2))
     end
@@ -409,7 +410,6 @@ for a = 1:length(params.condition)
 end
 fprintf('done\n\n')
 
-
 % open letswave for visual check
 fig_all = findall(0, 'Type', 'figure');
 open = true;
@@ -428,7 +428,7 @@ fprintf('\n')
 save(output_file, 'TEP_new','-append')
 clear data2load a b c d f lwdata option channel_all channel_mask channels2keep header data...
     code latency concat_idx fig_all open
-fprintf('section 2 finished\n')
+fprintf('section 2 finished\n\n')
 
 %% 3) re-reference and export to EEGLAB
 % ----- section input -----
@@ -442,8 +442,8 @@ if exist('dataset') ~= 1
     fprintf('loading dataset... ')
     data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
     dataset = reload_dataset(data2load, params.condition, 'processed');
+    fprintf('done\n')
 end
-fprintf('done\n')
 
 % interpolate channels if needed
 params.labels = {dataset(1).processed(1).header.chanlocs.labels};
@@ -538,7 +538,7 @@ fprintf('done\n\n')
 % save and continue
 save(output_file, 'TEP_new','-append')
 clear a b c d prompt dlgtitle dims definput answer chans2interpolate chan_n chan_dist chan_idx chans2use lwdata option    
-fprintf('section 3 finished\n')
+fprintf('section 3 finished\n\n')
 
 %% 4) SSP-SIR
 % ----- section input -----
@@ -854,7 +854,6 @@ for a = 1:length(params.condition)
         save(sprintf('%s.lw6', dataset(a).ica(b).header.name), 'header');
     end
 
-
     % unmix data
     for b = 1:length(dataset(a).ica)
         for e = 1:size(dataset(a).ica(b).data, 1)
@@ -1015,6 +1014,7 @@ fprintf('section 6 finished.\n')
 answer = questdlg('Do you want to continue with next subject?', 'Continue?', 'YES', 'NO', 'YES'); 
 if strcmp(answer, 'YES')
     subject_idx = subject_idx + 1;
+    clear dataset
 end
 clear a b prompt definput input dims dlgtitle answer fig screen_size visual eoi data data2plot
 
