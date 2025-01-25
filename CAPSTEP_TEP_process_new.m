@@ -107,7 +107,7 @@ for a = 1:length(params.condition)
 
     % check number of datasets
     if length(data2import) ~= length(files2import)
-        error('ERROR: This does not match with expected number of datasets (%d)\n.Please verify manually.\n', length(data2import))
+        error('ERROR: This does not match with expected number of datasets (%d).\nPlease verify manually.\n', length(files2import))
     end
 
     % load datasets
@@ -546,6 +546,7 @@ params.prefix = 'preprocessed';
 params.suffix = {'preprocessed' 'sspsir' 'ffilt'};
 params.baseline = [-0.25 -0.006]; 
 params.bandpass = [0.5, 80];
+params.notch = [48.5, 51.5];
 params.plot_output = true;
 params.plot_toi = [-0.1 0.5];
 % -------------------------
@@ -583,15 +584,8 @@ for a = 1:length(params.condition)
             TEP_new(subject_idx).processing(10).process = 're-referenced to common average';
             TEP_new(subject_idx).processing(10).date = sprintf('%s', date);
         end
-        
-        % % visualize the average response
-        % figure(figure_counter); 
-        % pop_plottopo(pop_select(EEG, 'time', [-0.1 0.3]), [] , '', 0, 'ydir', 1, 'ylim', [-30 30]);
-        % sgtitle(sprintf('%s: %s - %s', TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b}))
-        % set(gcf, 'units', 'normalized', 'outerposition', [0 0 1 1])
-        % figure_counter = figure_counter + 1;
     end
-    fprintf('done.\n')
+    fprintf('done\n')
 
     % merge the data
     fprintf('merging ...\n')
@@ -623,13 +617,13 @@ for a = 1:length(params.condition)
 
         % extract epochs and update ALLEEG
         EEG = pop_select(merged_EEG, 'trial', idx_start:(idx_start + n_epochs - 1));
-        
+
         % save new dataset
         name = sprintf('%s %s %s %s %s', params.suffix{2}, study, TEP_new(subject_idx).ID, params.condition{a}, params.timepoint{b}); 
         EEG.setname = name;
         EEG.filename = sprintf('%s.set', name);
         pop_saveset(EEG, 'filename', name, 'filepath', folder.processed);
-    
+
         % update starting index 
         idx_start = idx_start + n_epochs;       
     end
@@ -649,7 +643,7 @@ for a = 1:length(params.condition)
         EEG = pop_eegfiltnew(EEG, 'locutoff', params.bandpass(1), 'hicutoff', params.bandpass(2));
 
         % notch filter
-        EEG = pop_eegfiltnew(EEG, 'locutoff', 49.5, 'hicutoff', 50.5, 'revfilt', 1); 
+        EEG = pop_eegfiltnew(EEG, 'locutoff', params.notch(1), 'hicutoff', params.notch(2), 'revfilt', 1);
 
         % % check spectrum
         % pop_spectopo(EEG, 1, [], 'EEG', 'freqrange', [0 100]);
@@ -658,7 +652,7 @@ for a = 1:length(params.condition)
         if a == 1 && b == 1
             TEP_new(subject_idx).processing(12).process = sprintf('frequency filters applied');
             TEP_new(subject_idx).processing(12).params.bandpass = params.bandpass;
-            TEP_new(subject_idx).processing(12).params.notch = 50;
+            TEP_new(subject_idx).processing(12).params.notch = params.notch;
             TEP_new(subject_idx).processing(12).suffix = params.suffix{3};
             TEP_new(subject_idx).processing(12).date = sprintf('%s', date);
         end
@@ -757,7 +751,7 @@ fprintf('\n')
 % save and continue
 save(output_file, 'TEP_new','-append')
 clear a b c f e fig_all name match prompt discarded answer data header lwdata data2load definput dims dlgtitle eoi fig idx_start input latency code ...
-    n_epochs open tmpEEG tmpstr visual ALLCOM ALLEEG CURRENTSET CURRENTSTUDY EEG merged_EEG globalvars LASTCOM PLUGINLIST STUDY
+    n_epochs open tmpEEG tmpstr visual ALLCOM ALLEEG CURRENTSET CURRENTSTUDY EEG merged_EEG globalvars LASTCOM PLUGINLIST STUDY GUI_handle GUI_OK
 fprintf('section 4 finished\nplease check for bad trials now\n\n')
 
 %% 5) ICA
@@ -855,8 +849,11 @@ for a = 1:length(params.condition)
         dataset(a).ica(b).header.history(10).configuration.parameters = dataset(a).ica(b).header.history(10).option;  
         [dataset(a).ica(b).header.history(10).configuration.parameters.ICA_um] = dataset(a).ica(b).header.history(10).configuration.parameters.unmix_matrix; 
         [dataset(a).ica(b).header.history(10).configuration.parameters.ICA_mm] = dataset(a).ica(b).header.history(10).configuration.parameters.mix_matrix; 
-        dataset(a).ica(b).header.history(10).configuration.parameters = rmfield(dataset(a).ica(b).header.history(10).configuration.parameters, {'unmix_matrix' 'mix_matrix'}); 
+        dataset(a).ica(b).header.history(10).configuration.parameters = rmfield(dataset(a).ica(b).header.history(10).configuration.parameters, {'unmix_matrix' 'mix_matrix'});
+        header = dataset(a).ica(b).header;
+        save(sprintf('%s.lw6', dataset(a).ica(b).header.name), 'header');
     end
+
 
     % unmix data
     for b = 1:length(dataset(a).ica)
@@ -932,6 +929,8 @@ fprintf('section 5 finished.please procede to ICA now\n\n')
 % ----- section input -----
 params.suffix = {'icfilt'};
 params.ICA_comp = 25;
+params.plot_toi = [-0.1 0.5];
+params.eoi = 'Cz';
 % -------------------------
 fprintf('section 6: encode ICA\n')
 
@@ -958,18 +957,78 @@ for a = 1:length(params.condition)
     TEP_new(subject_idx).processing(15).params.removed(a).slow = str2num(input{5});
 end
 save(output_file, 'TEP_new', '-append')
-fprintf('section 6 finished.\n')
+
+% launch the figure
+fig = figure(figure_counter);
+screen_size = get(0, 'ScreenSize');
+set(fig, 'Position', [screen_size(3)/4, screen_size(4)/4, screen_size(3) / 2.5, screen_size(4) / 2])
+
+% define common visual parameters
+params.labels = {dataset(1).ica(1).header.chanlocs.labels};
+visual.x = dataset(1).ica(1).header.xstart : dataset(1).ica(1).header.xstep : ...
+    dataset(1).ica(1).header.xstep * dataset(1).ica(1).header.datasize(6) + dataset(1).ica(1).header.xstart - dataset(1).ica(1).header.xstep;
+visual.labels = params.condition;
+visual.xlim = params.plot_toi;
+visual.colors = [0.9216    0.1490    0.1490;
+                0    0.4471    0.7412];
+
+% extract mean signal per condition
+for a = 1:length(params.condition)
+    % identify EOI
+    if strcmp(params.eoi, 'target')
+        if strcmp(TEP_new(subject_idx).stimulation(a).hemisphere, 'right')
+            visual.text  = 'C4';
+        elseif strcmp(TEP_new(subject_idx).stimulation(a).hemisphere, 'left')
+            visual.text  = 'C3';
+        end        
+    else
+        visual.text  = params.eoi;
+    end
+    eoi = find(strcmp(params.labels, visual.text));
+
+    % subset data
+    data2plot = [];
+    for b = 1:length(params.timepoint)
+        load(sprintf('%s %s.mat', params.suffix{1}, dataset(a).ica(b).header.name))
+        data2plot(end + 1 : end + size(data,1), :) = squeeze(data(:, eoi, 1, 1, 1, :));
+    end
+
+    % define t value
+    visual.t_value = tinv(0.975, size(data2plot, 1) - 1); 
+
+    % select original data
+    visual.data(a, :) = mean(data2plot, 1)';  
+    visual.sem(a, :) = std(data2plot, 0, 1)' / sqrt(size(data2plot, 1)); 
+    visual.CI_upper(a, :) = visual.data(a, :) + visual.t_value * visual.sem(a, :); 
+    visual.CI_lower(a, :) = visual.data(a, :) - visual.t_value * visual.sem(a, :);
+end
+
+% plot
+plot_ERP(visual, 'xlim', visual.xlim, 'colours', visual.colors, 'labels', visual.labels)
+
+% save and update counter
+saveas(fig, sprintf('%s\\figures\\TEP_avg_%s.png', folder.output, TEP_new(subject_idx).ID))
+figure_counter = figure_counter + 1;
 
 % ask for continuation
+fprintf('section 6 finished.\n')
 answer = questdlg('Do you want to continue with next subject?', 'Continue?', 'YES', 'NO', 'YES'); 
 if strcmp(answer, 'YES')
     subject_idx = subject_idx + 1;
 end
-clear a prompt definput input dims dlgtitle answer
+clear a b prompt definput input dims dlgtitle answer fig screen_size visual eoi data data2plot
 
 %% group statistics
 %% visualization
 %% code scraps
+% adjust history for ICA
+for a = 1:length(params.condition) 
+    for b = 1:length(params.timepoint)
+        header = dataset(a).ica(b).header;
+        save(sprintf('%s.lw6',  dataset(a).ica(b).header.name), 'header');
+    end
+end
+
 % remove bad epochs in EEGLAB
 for a = 1:length(params.condition)
     for b = 1:length(params.timepoint)
