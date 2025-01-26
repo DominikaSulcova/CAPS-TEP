@@ -37,7 +37,7 @@ else
     TEP_new = struct; 
     save(output_file, 'TEP_new')
 end
-fprintf('done.\n')
+fprintf('done.\n\n')
 
 % dataset
 params.condition = {'pain', 'control'};
@@ -255,7 +255,7 @@ end
 save(output_file, 'TEP_new','-append')
 clear a b c d e f data2import dataset_idx files2import data_idx data2load file_idx filename ...
     option lwdata event_idx epoch_idx concat_idx data header open fig_all
-fprintf('section 1 finished\n\n')
+fprintf('section 1 finished.\n\n')
 
 %% 2) segment and pre-process for visual inspection
 % ----- section input -----
@@ -357,8 +357,7 @@ for a = 1:length(params.condition)
         dataset(a).raw(d).data = data; 
     end
 end
-fprintf('done\n')
-fprintf('\n')
+fprintf('done.\n\n')
 
 % concatenate blocks into timepoints
 fprintf('concatenating blocks and saving ... ') 
@@ -408,7 +407,7 @@ for a = 1:length(params.condition)
         save([header.name '.mat'], 'data')
     end
 end
-fprintf('done\n\n')
+fprintf('done.\n\n')
 
 % open letswave for visual check
 fig_all = findall(0, 'Type', 'figure');
@@ -428,7 +427,7 @@ fprintf('\n')
 save(output_file, 'TEP_new','-append')
 clear data2load a b c d f lwdata option channel_all channel_mask channels2keep header data...
     code latency concat_idx fig_all open
-fprintf('section 2 finished\n\n')
+fprintf('section 2 finished.\n\n')
 
 %% 3) re-reference and export to EEGLAB
 % ----- section input -----
@@ -439,10 +438,10 @@ fprintf('section 3: exporting to EEGLAB\n')
 
 % load dataset if needed
 if exist('dataset') ~= 1
-    fprintf('loading dataset... ')
+    fprintf('re-loading dataset... ')
     data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
     dataset = reload_dataset(data2load, params.condition, 'processed');
-    fprintf('done\n')
+    fprintf('done.\n')
 end
 
 % interpolate channels if needed
@@ -520,7 +519,7 @@ end
 addpath(genpath([folder.toolbox '\letswave 7']));
 
 % save as .set
-fprintf('saving for EEGLAB: ')
+fprintf('saving for EEGLAB... ')
 for a = 1:length(params.condition)
     for d = 1:length(dataset(a).processed)
         fprintf('. ')
@@ -533,12 +532,12 @@ for a = 1:length(params.condition)
         export_EEGLAB(lwdata, lwdata.header.name, TEP_new(subject_idx).ID);
     end
 end
-fprintf('done\n\n')
+fprintf('done.\n\n')
 
 % save and continue
 save(output_file, 'TEP_new','-append')
 clear a b c d prompt dlgtitle dims definput answer chans2interpolate chan_n chan_dist chan_idx chans2use lwdata option    
-fprintf('section 3 finished\n\n')
+fprintf('section 3 finished.\n\n')
 
 %% 4) SSP-SIR
 % ----- section input -----
@@ -554,11 +553,11 @@ fprintf('section 4: SSP-SIR\n')
 
 % load dataset if needed
 if exist('dataset') ~= 1
-    fprintf('loading dataset... ')
+    fprintf('re-loading dataset... ')
     data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
     dataset = reload_dataset(data2load, params.condition, 'processed');
+    fprintf('done.\n')
 end
-fprintf('done\n')
 
 % add eeglab to the top of search path and launch
 addpath(fullfile(folder.toolbox, 'EEGLAB'));
@@ -566,7 +565,7 @@ eeglab
 
 % apply SSP-SIR separately on data from each each session 
 for a = 1:length(params.condition)
-    fprintf('\n ======================== %s session ========================\n', params.condition{a})
+    fprintf('\n======================== %s session ========================\n', params.condition{a})
 
     % load all datasets, re-reference 
     fprintf('loading dataset: ')
@@ -752,7 +751,7 @@ fprintf('\n')
 save(output_file, 'TEP_new','-append')
 clear a b c f e fig_all name match prompt discarded answer data header lwdata data2load definput dims dlgtitle eoi fig idx_start input latency code ...
     n_epochs open tmpEEG tmpstr visual ALLCOM ALLEEG CURRENTSET CURRENTSTUDY EEG merged_EEG globalvars LASTCOM PLUGINLIST STUDY GUI_handle GUI_OK
-fprintf('section 4 finished\nplease check for bad trials now\n\n')
+fprintf('section 4 finished.\nPlease check for bad trials now.\n\n')
 
 %% 5) ICA
 % ----- section input -----
@@ -763,7 +762,7 @@ params.ICA_comp = 25;
 fprintf('section 5: ICA\n')
 
 % load dataset with bad trials removed
-fprintf('loading dataset... ')
+fprintf('updating dataset... ')
 if exist('dataset') ~= 1
     % load previous dataset
     data2load = dir(sprintf('%s*%s*', params.prefix(4:end), TEP_new(subject_idx).ID));
@@ -787,7 +786,7 @@ else
     end
     clear dataset_old
 end
-fprintf('done\n')
+fprintf('done.\n')
 
 % encode bad trials
 fprintf('encoding bad trials... ')
@@ -819,7 +818,7 @@ addpath(genpath([folder.toolbox '\letswave 7']));
 
 % compute ICA matrix and save for letswave
 for a = 1:length(params.condition)
-    fprintf('\n ======================== %s session ========================\n', params.condition{a})
+    fprintf('\n======================== %s session ========================\n', params.condition{a})
 
     % select dataset
     lwdataset = dataset(a).checked;
@@ -912,7 +911,7 @@ for a = 1:length(params.condition)
     sgtitle(sprintf('%s - %s session', TEP_new(subject_idx).ID, params.condition{a}))
     saveas(gcf, sprintf('%s\\figures\\ICA_%s_%s.png', folder.output, TEP_new(subject_idx).ID, params.condition{a}));
 end
-fprintf('done\n')
+fprintf('done.\n')
 
 % open letswave 6 
 addpath(genpath([folder.toolbox '\letswave 6']));
@@ -922,7 +921,7 @@ letswave
 save(output_file, 'TEP_new','-append')
 clear a b c d e f i data2load check discarded match prompt definput input input_old dims dlgtitle matrix fig_all open ...
     psd freq option lwdataset labels header
-fprintf('section 5 finished.please procede to ICA now\n\n')
+fprintf('section 5 finished.\nPlease procede to ICA now\n\n')
 
 %% 6) encode ICA
 % ----- section input -----
@@ -932,6 +931,14 @@ params.plot_toi = [-0.1 0.5];
 params.eoi = 'Cz';
 % -------------------------
 fprintf('section 6: encode ICA\n')
+
+% load dataset if necessary
+if exist('dataset') ~= 1
+    fprintf('loading dataset... ')
+    data2load = dir(sprintf('ica*%s*', TEP_new(subject_idx).ID));
+    dataset = reload_dataset(data2load, params.condition, 'ica');
+    fprintf('done\n')
+end
 
 % encode 
 TEP_new(subject_idx).processing(15).process = 'artifactual ICs discarded';
