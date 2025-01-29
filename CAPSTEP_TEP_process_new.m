@@ -254,13 +254,14 @@ end
 % save and continue
 save(output_file, 'TEP_new','-append')
 clear a b c d e f data2import dataset_idx files2import data_idx data2load file_idx filename ...
-    option lwdata event_idx epoch_idx concat_idx data header open fig_all
+    option lwdata event_idx epoch_idx concat_idx data header open fig_all 
 fprintf('section 1 finished.\n\n')
 
 %% 2) segment and pre-process for visual inspection
 % ----- section input -----
 params.prefix = 'dc ds crop';
 params.suffix = {'no_mastoid' 'ep' 'dc' 'art_interp' 'preprocessed'};
+params.eventcode = 'TMS';
 params.epoch = [-1.5 1.5];
 params.artifact_interp = [-0.005 0.01];
 params.artifact_method = 'pchip';
@@ -276,12 +277,8 @@ end
 if exist('dataset') ~= 1
     fprintf('loading dataset...\n')
     data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
-    if length(data2load) == length(params.condition) * length(params.timepoint) * length(params.block) * 2
-        dataset = reload_dataset(data2load, params.condition, 'raw');
-        fprintf('done\n')
-    else
-        error(sprintf('ERROR: Wrong number of datasets (%d) found in the directory!', length(data2load)/2))
-    end
+    dataset = reload_dataset(data2load, params.condition, 'raw');
+    fprintf('done\n')
 end
 
 % segment and pre-process
@@ -536,7 +533,7 @@ fprintf('done.\n\n')
 
 % save and continue
 save(output_file, 'TEP_new','-append')
-clear a b c d prompt dlgtitle dims definput answer chans2interpolate chan_n chan_dist chan_idx chans2use lwdata option    
+clear a b c d e prompt dlgtitle dims definput answer chans2interpolate chan_n chan_dist chan_idx chans2use lwdata option 
 fprintf('section 3 finished.\n\n')
 
 %% 4) SSP-SIR
@@ -605,8 +602,8 @@ for a = 1:length(params.condition)
         TEP_new(subject_idx).processing(11).suffix = params.suffix{2};
         TEP_new(subject_idx).processing(11).date = sprintf('%s', date);
     end
-    TEP_new(subject_idx).processing(11).params.PC.condition = params.condition{a};
-    TEP_new(subject_idx).processing(11).params.PC.removed = str2num(input{1,1});
+    TEP_new(subject_idx).processing(11).params.PC(a).condition = params.condition{a};
+    TEP_new(subject_idx).processing(11).params.PC(a).removed = str2num(input{1,1});
 
     % split back to original datasets
     idx_start = 1;
@@ -874,10 +871,8 @@ TEP_new(subject_idx).processing(14).suffix = params.suffix{2};
 TEP_new(subject_idx).processing(14).date = sprintf('%s', date);
 
 % plot IC spectral content separately for each session
-fprintf('estimating spectral content:\n')
+fprintf('estimating spectral content...\n')
 for a = 1:length(params.condition)
-    fprintf('estimating spectral content:\n')
-
     % calculate PSD across all timepoints, components and trials 
     psd = [];
     for b = 1:length(params.timepoint)
@@ -1022,6 +1017,7 @@ answer = questdlg('Do you want to continue with next subject?', 'Continue?', 'YE
 if strcmp(answer, 'YES')
     subject_idx = subject_idx + 1;
     clear dataset
+    fprintf('proceeding to subject %d.\n\n', subject_idx)
 end
 clear a b prompt definput input dims dlgtitle answer fig screen_size visual eoi data data2plot
 
@@ -1033,6 +1029,15 @@ for a = 1:length(params.condition)
     for b = 1:length(params.timepoint)
         header = dataset(a).ica(b).header;
         save(sprintf('%s.lw6',  dataset(a).ica(b).header.name), 'header');
+    end
+end
+
+% adjust eventcodes
+for a = 1:length(params.condition) 
+    for b = 1:length(dataset(a).raw)
+        for e = 1:length(dataset(a).raw(b).header.events)
+            dataset(a).raw(b).header.events(e).code = 'TMS'; 
+        end
     end
 end
 
