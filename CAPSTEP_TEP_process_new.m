@@ -1019,17 +1019,25 @@ if strcmp(answer, 'YES')
     clear dataset
     fprintf('proceeding to subject %d.\n\n', subject_idx)
 end
-clear a b prompt definput input dims dlgtitle answer fig screen_size visual eoi data data2plot
+clear a b data2load prompt definput input dims dlgtitle answer fig screen_size visual eoi data data2plot
 
 %% group statistics
 %% visualization
 %% code scraps
 % adjust history for ICA
-for a = 1:length(params.condition) 
+for a = 2:length(params.condition) 
+    fprintf('%s session: ', params.condition{a})
     for b = 1:length(params.timepoint)
-        header = dataset(a).ica(b).header;
-        save(sprintf('%s.lw6',  dataset(a).ica(b).header.name), 'header');
+        fprintf('. ')
+        load(sprintf('ica ar ffilt sspsir CAPSTEP S06 %s %s .lw6', params.condition{a}, params.timepoint{b}), '-mat')
+        header.history(10).configuration.gui_info.function_name = 'LW_ICA_compute_merged';  
+        header.history(10).configuration.parameters = header.history(10).option;  
+        header.history(10).configuration.parameters.ICA_um = header.history(10).configuration.parameters.unmix_matrix; 
+        header.history(10).configuration.parameters.ICA_mm = header.history(10).configuration.parameters.mix_matrix; 
+        header.history(10).configuration.parameters = rmfield(header.history(10).configuration.parameters, {'unmix_matrix' 'mix_matrix'});
+        save(sprintf('ica ar ffilt sspsir CAPSTEP S06 %s %s .lw6', params.condition{a}, params.timepoint{b}), 'header');
     end
+    fprintf('done.\n')
 end
 
 % adjust eventcodes
