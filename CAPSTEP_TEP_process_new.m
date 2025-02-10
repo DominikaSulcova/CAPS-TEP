@@ -1021,8 +1021,207 @@ if strcmp(answer, 'YES')
 end
 clear a b data2load prompt definput input dims dlgtitle answer fig screen_size visual eoi data data2plot
 
-%% group statistics
-%% visualization
+%% 7) load and plot group data
+% ----- section input -----
+params.prefix = 'icfilt ica ar ffilt sspsir';
+params.subjects = 20;
+params.plot_toi = [-0.025 0.1];
+params.baseline = [-0.3 -0.005];
+% -------------------------
+fprintf('section 7: load and plot group data\n')
+
+% clear away single-subject variables, if necessary
+clear dataset subject_idx
+
+% load data of all subjects
+fprintf('loading data: ')
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)
+        fprintf('. ')
+        for s = 1:params.subjects            
+            % load the data
+            load(sprintf('%s %s %s %s %s .mat', params.prefix, study, TEP_new(s).ID, params.condition{a}, params.timepoint{b}))
+
+            % append to the dataset
+            dataset.avg(a, b, s, :, :) = squeeze(mean(data, 1));
+        end
+    end
+end
+fprintf('done.\n')
+
+% load dataset information
+load(sprintf('%s %s %s %s %s .lw6', params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')
+params.labels = {header.chanlocs.labels};
+params.x = (0:header.datasize(6)-1)*header.xstep + header.xstart;
+params.chanlocs = header.chanlocs;
+
+% perform baseline correction by subtracting baseline average
+fprintf('correcting for baseline: ')
+baseline.idx = find(params.x >= params.baseline(1) & params.x <= params.baseline(2));
+dataset.normalized = dataset.avg;
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)
+        fprintf('. ')
+        for s = 1:params.subjects 
+            for c = 1:length(params.chanlocs)
+                % extract baseline segment
+                baseline.values = squeeze(dataset.normalized(a, b, s, c, baseline.idx));
+
+                % compute mean and standard deviation of baseline
+                baseline.mean = mean(baseline.values, 'all');
+                baseline.std = std(baseline.values, 0, 'all');
+
+                % normalize the signal
+                if baseline.std > 0  
+                    dataset.normalized(a, b, s, c, :) = (squeeze(dataset.normalized(a, b, s, c, :)) - baseline.mean) / baseline.std;
+                else
+                    warning('Baseline std = 0 for %s condition, timepoint %s, subject %d, electrode %s. No normalization applied.', ...
+                        params.condition{a}, params.timepoint{b}, s, params.labels{c});
+                end
+                
+            end
+        end
+    end
+end
+fprintf('done.\n')
+
+% calculate change from baseline + its GFP
+for a = 1:length(params.condition)
+    for b = 2:length(params.timepoint)
+        for s = 1:params.subjects
+            dataset.change(a, b-1, s, :, :) = dataset.normalized(a, b, s, :, :) - dataset.normalized(a, 1, s, :, :);
+            dataset.change_GFP(a, b-1, s, :) = std(dataset.change(a, b-1, s, :, :), 1, 4);
+        end
+    end
+end
+
+% define common visual parameters
+visual.x = params.x;
+visual.labels = params.condition;
+visual.xlim = params.plot_toi;
+visual.t_value = tinv(0.975, size(dataset.change_GFP, 3) - 1); 
+
+% ================ plot change GFP ================
+% extract mean GFP change per condition and timepoint
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)-1         
+        dataset.visual_GFP.data(a, b, :) = squeeze(mean(dataset.change_GFP(a, b, :, :), 3))';  
+        dataset.visual_GFP.sem(a, b, :) = squeeze(std(dataset.change_GFP(a, b, :, :), 0, 3))' / sqrt(size(dataset.change_GFP(a, b, :, :), 3)); 
+        dataset.visual_GFP.CI_upper(a, b, :) = dataset.visual_GFP.data(a, b, :) + visual.t_value * dataset.visual_GFP.sem(a, b, :); 
+        dataset.visual_GFP.CI_lower(a, b, :) = dataset.visual_GFP.data(a, b, :) - visual.t_value * dataset.visual_GFP.sem(a, b, :);
+    end 
+end
+
+% launch the figure
+fig = figure(figure_counter);
+screen_size = get(0, 'ScreenSize');
+set(fig, 'Position', [0, screen_size(4)/4, screen_size(3), screen_size(4) / 2])
+
+% select plotting colours
+visual.colors = [0.9216    0.1490    0.1490;
+                0    0.4471    0.7412];
+
+% plot mean GFP change from baseline
+visual.ylim = [];
+for b = 1:length(params.timepoint)-1 
+    % select the data
+    visual.data = squeeze(dataset.visual_GFP.data(:, b, :));
+    visual.CI_upper = squeeze(dataset.visual_GFP.CI_upper(:, b, :));
+    visual.CI_lower = squeeze(dataset.visual_GFP.CI_lower(:, b, :));
+
+    % plot averages of both conditions in one plot
+    subplot(1, length(params.timepoint)-1, b)
+    plot_ERP(visual, 'xlim', visual.xlim, 'colours', visual.colors, 'labels', visual.labels)
+    title(sprintf('%s', params.timepoint{b+1}))
+    hold on
+
+    % get y limits
+    visual.ylim(b, :) = get(gca, 'ylim');
+end
+
+% regulate the resolution
+for b = 1:length(params.timepoint)-1
+    subplot(1, length(params.timepoint)-1, b)
+    ylim([0, max(visual.ylim(:, 2))])
+    line([0, 0], [0, max(visual.ylim(:, 2))], 'Color', 'black', 'LineWidth', 2.5, 'LineStyle', '--')
+    legend(findobj(gca, 'Type', 'line', '-not', 'Color', 'black'));
+end
+
+% save figure and update
+saveas(fig, sprintf('%s\\figures\\group_change_GFP.png', folder.output))
+figure_counter = figure_counter + 1;
+
+% ============ plot change - butterfly ============
+% extract mean GFP change per condition and timepoint
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)-1   
+        for c = 1:length(params.chanlocs)
+            dataset.visual_butterfly.data(a, b, c, :) = squeeze(mean(dataset.change(a, b, :, c, :), 3))';  
+            dataset.visual_butterfly.sem(a, b, c, :) = squeeze(std(dataset.change(a, b, :, c, :), 0, 3))' / sqrt(size(dataset.change(a, b, :, c, :), 3)); 
+            dataset.visual_butterfly.CI_upper(a, b, c, :) = dataset.visual_butterfly.data(a, b, c, :) + visual.t_value * dataset.visual_butterfly.sem(a, b, c, :); 
+            dataset.visual_butterfly.CI_lower(a, b, c, :) = dataset.visual_butterfly.data(a, b, c, :) - visual.t_value * dataset.visual_butterfly.sem(a, b, c, :);
+        end
+    end 
+end
+
+% launch the figure
+fig = figure(figure_counter);
+screen_size = get(0, 'ScreenSize');
+set(fig, 'Position', [0, screen_size(4)/8, screen_size(3), screen_size(4) / 1.5])
+
+% plot mean change from baseline
+visual.ylim = [];
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)-1 
+        % select plotting colours
+        for c = 1:length(params.chanlocs)
+            if a == 1
+                visual.colors(c, :) = [0.9216    0.1490    0.1490];
+            elseif a == 2
+                visual.colors(c, :) = [0    0.4471    0.7412];
+            end
+        end
+
+        % select the data
+        visual.data = squeeze(dataset.visual_butterfly.data(a, b, :, :));
+        visual.CI_upper = squeeze(dataset.visual_butterfly.CI_upper(a, b, :, :));
+        visual.CI_lower = squeeze(dataset.visual_butterfly.CI_lower(a, b, :, :));
+    
+        % plot averages of both conditions in one plot
+        subplot(2, length(params.timepoint)-1, (a-1)*(length(params.timepoint)-1) + b)
+        plot_ERP(visual, 'xlim', visual.xlim, 'colours', visual.colors, 'legend', 'off', 'shading', 'off')
+        if a == 1
+            title(sprintf('%s', params.timepoint{b+1}))
+        end
+        hold on
+
+        % get y limits
+        visual.ylim(a, b, :) = get(gca, 'ylim');
+    end
+end
+
+% regulate the resolution
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)-1
+        subplot(2, length(params.timepoint)-1, (a-1)*(length(params.timepoint)-1) + b)
+        ylim([min(visual.ylim(:, :, 1), [], 'all'), max(visual.ylim(:, :, 2), [], 'all')])
+        line([0, 0], [min(visual.ylim(:, :, 1), [], 'all'), max(visual.ylim(:, :, 2), [], 'all')], 'Color', 'black', 'LineWidth', 2.5, 'LineStyle', '--')
+        legend('off');
+    end
+end
+
+% save figure and update
+saveas(fig, sprintf('%s\\figures\\group_change_butterfly.png', folder.output))
+figure_counter = figure_counter + 1;
+
+% save the dataset and clean up
+TEP_new_data = dataset;
+save(output_file, 'TEP_new_data', '-append')
+clear a b c s data header baseline fig screen_size visual dataset
+fprintf('section 7 finished.\n')
+
+%% 8) statistics and export
+%% 9) final visualization
 %% code scraps
 % adjust history for ICA
 for a = 2:length(params.condition) 
@@ -1157,6 +1356,7 @@ while check
         input_old = input;
     end
 end
+
 %% functions
 function dataset = reload_dataset(data2load, conditions, fieldname)
 % =========================================================================
@@ -1403,6 +1603,8 @@ end
 if plot_legend 
     legend(P, labels, 'Location', legend_loc, 'fontsize', 14)
     legend('boxoff');
+else
+    legend('off')
 end
 
 % axes
@@ -1427,7 +1629,7 @@ if reverse
 end
 
 % other parameters
-xlabel('time (ms)')
+xlabel('time (s)')
 ylabel('amplitude (\muV)')
 set(gca, 'FontSize', 14)
 ylim(y_limits)
