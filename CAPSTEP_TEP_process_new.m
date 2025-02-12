@@ -1025,13 +1025,15 @@ clear a b data2load prompt definput input dims dlgtitle answer fig screen_size v
 % ----- section input -----
 params.prefix = 'icfilt ica ar ffilt sspsir';
 params.subjects = 20;
-params.plot_toi = [-0.025 0.1];
 params.baseline = [-0.3 -0.005];
 % -------------------------
 fprintf('section 7: load and plot group data\n')
 
-% clear away single-subject variables, if necessary
+% update
+% load(output_file, 'TEP_new_data')
+% dataset = TEP_new_data;
 clear dataset subject_idx
+cd(folder.output)
 
 % load data of all subjects
 fprintf('loading data: ')
@@ -1050,12 +1052,12 @@ end
 fprintf('done.\n')
 
 % load dataset information
-load(sprintf('%s %s %s %s %s .lw6', params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')
+load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')
 params.labels = {header.chanlocs.labels};
 params.x = (0:header.datasize(6)-1)*header.xstep + header.xstart;
 params.chanlocs = header.chanlocs;
 
-% perform baseline correction by subtracting baseline average
+% perform baseline normalization to z-scores
 fprintf('correcting for baseline: ')
 baseline.idx = find(params.x >= params.baseline(1) & params.x <= params.baseline(2));
 dataset.normalized = dataset.avg;
@@ -1098,61 +1100,46 @@ end
 % define common visual parameters
 visual.x = params.x;
 visual.labels = params.condition;
-visual.xlim = params.plot_toi;
+visual.chanlabels = params.labels;
 visual.t_value = tinv(0.975, size(dataset.change_GFP, 3) - 1); 
 
-% ================ plot change GFP ================
-% extract mean GFP change per condition and timepoint
-for a = 1:length(params.condition)
-    for b = 1:length(params.timepoint)-1         
-        dataset.visual_GFP.data(a, b, :) = squeeze(mean(dataset.change_GFP(a, b, :, :), 3))';  
-        dataset.visual_GFP.sem(a, b, :) = squeeze(std(dataset.change_GFP(a, b, :, :), 0, 3))' / sqrt(size(dataset.change_GFP(a, b, :, :), 3)); 
-        dataset.visual_GFP.CI_upper(a, b, :) = dataset.visual_GFP.data(a, b, :) + visual.t_value * dataset.visual_GFP.sem(a, b, :); 
-        dataset.visual_GFP.CI_lower(a, b, :) = dataset.visual_GFP.data(a, b, :) - visual.t_value * dataset.visual_GFP.sem(a, b, :);
-    end 
+% ============== overall average TEP ==============
+fprintf('plotting overall average TEPs... \n')
+
+% extract overall mean values
+for c = 1:size(dataset.normalized, 4)
+    dataset.visual_mean.data(c, :) = squeeze(mean(dataset.normalized(:, :, :, c, :), 1:3))'; 
+    dataset.visual_mean.sem(c, :) = squeeze(std(dataset.normalized(:, :, :, c, :), 0, 1:3))'; 
+    dataset.visual_mean.CI_upper(c, :) = dataset.visual_mean.data(c, :) + visual.t_value * dataset.visual_mean.sem(c, :); 
+    dataset.visual_mean.CI_lower(c, :) = dataset.visual_mean.data(c, :) - visual.t_value * dataset.visual_mean.sem(c, :);
 end
 
 % launch the figure
 fig = figure(figure_counter);
 screen_size = get(0, 'ScreenSize');
-set(fig, 'Position', [0, screen_size(4)/4, screen_size(3), screen_size(4) / 2])
+set(fig, 'Position', [screen_size(3)/4, screen_size(4)/4, screen_size(3)/2, screen_size(4) / 2])
 
 % select plotting colours
-visual.colors = [0.9216    0.1490    0.1490;
-                0    0.4471    0.7412];
-
-% plot mean GFP change from baseline
-visual.ylim = [];
-for b = 1:length(params.timepoint)-1 
-    % select the data
-    visual.data = squeeze(dataset.visual_GFP.data(:, b, :));
-    visual.CI_upper = squeeze(dataset.visual_GFP.CI_upper(:, b, :));
-    visual.CI_lower = squeeze(dataset.visual_GFP.CI_lower(:, b, :));
-
-    % plot averages of both conditions in one plot
-    subplot(1, length(params.timepoint)-1, b)
-    plot_ERP(visual, 'xlim', visual.xlim, 'colours', visual.colors, 'labels', visual.labels)
-    title(sprintf('%s', params.timepoint{b+1}))
-    hold on
-
-    % get y limits
-    visual.ylim(b, :) = get(gca, 'ylim');
+for c = 1:length(params.chanlocs)
+    visual.colors(c, :) = [0.3020    0.7451    0.9333];
 end
 
-% regulate the resolution
-for b = 1:length(params.timepoint)-1
-    subplot(1, length(params.timepoint)-1, b)
-    ylim([0, max(visual.ylim(:, 2))])
-    line([0, 0], [0, max(visual.ylim(:, 2))], 'Color', 'black', 'LineWidth', 2.5, 'LineStyle', '--')
-    legend(findobj(gca, 'Type', 'line', '-not', 'Color', 'black'));
-end
+% select the data
+visual.data = dataset.visual_mean.data;
+visual.CI_upper = dataset.visual_mean.CI_upper;
+visual.CI_lower = dataset.visual_mean.CI_lower;
+    
+% plot 
+plot_ERP(visual, 'xlim', [-0.1 0.4], 'colours', visual.colors, 'legend', 'off', 'shading', 'off', 'interpolated', [-0.005 0.01], 'eoi', 'Cz')
 
 % save figure and update
-saveas(fig, sprintf('%s\\figures\\group_change_GFP.png', folder.output))
+saveas(fig, sprintf('%s\\figures\\group_avg.png', folder.output))
 figure_counter = figure_counter + 1;
 
 % ============ plot change - butterfly ============
-% extract mean GFP change per condition and timepoint
+fprintf('plotting change... \n')
+
+% extract mean change per condition, timepoint, and electrode
 for a = 1:length(params.condition)
     for b = 1:length(params.timepoint)-1   
         for c = 1:length(params.chanlocs)
@@ -1189,7 +1176,7 @@ for a = 1:length(params.condition)
     
         % plot averages of both conditions in one plot
         subplot(2, length(params.timepoint)-1, (a-1)*(length(params.timepoint)-1) + b)
-        plot_ERP(visual, 'xlim', visual.xlim, 'colours', visual.colors, 'legend', 'off', 'shading', 'off')
+        plot_ERP(visual, 'xlim', [-0.025 0.1], 'colours', visual.colors, 'legend', 'off', 'shading', 'off')
         if a == 1
             title(sprintf('%s', params.timepoint{b+1}))
         end
@@ -1212,6 +1199,58 @@ end
 
 % save figure and update
 saveas(fig, sprintf('%s\\figures\\group_change_butterfly.png', folder.output))
+figure_counter = figure_counter + 1;
+
+% ================ plot change GFP ================
+fprintf('plotting GFP of change... \n')
+
+% extract mean GFP change per condition and timepoint
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)-1         
+        dataset.visual_GFP.data(a, b, :) = squeeze(mean(dataset.change_GFP(a, b, :, :), 3))';  
+        dataset.visual_GFP.sem(a, b, :) = squeeze(std(dataset.change_GFP(a, b, :, :), 0, 3))' / sqrt(size(dataset.change_GFP(a, b, :, :), 3)); 
+        dataset.visual_GFP.CI_upper(a, b, :) = dataset.visual_GFP.data(a, b, :) + visual.t_value * dataset.visual_GFP.sem(a, b, :); 
+        dataset.visual_GFP.CI_lower(a, b, :) = dataset.visual_GFP.data(a, b, :) - visual.t_value * dataset.visual_GFP.sem(a, b, :);
+    end 
+end
+
+% launch the figure
+fig = figure(figure_counter);
+screen_size = get(0, 'ScreenSize');
+set(fig, 'Position', [0, screen_size(4)/4, screen_size(3), screen_size(4) / 2])
+
+% select plotting colours
+visual.colors = [0.9216    0.1490    0.1490;
+                0    0.4471    0.7412];
+
+% plot mean GFP change from baseline
+visual.ylim = [];
+for b = 1:length(params.timepoint)-1 
+    % select the data
+    visual.data = squeeze(dataset.visual_GFP.data(:, b, :));
+    visual.CI_upper = squeeze(dataset.visual_GFP.CI_upper(:, b, :));
+    visual.CI_lower = squeeze(dataset.visual_GFP.CI_lower(:, b, :));
+
+    % plot averages of both conditions in one plot
+    subplot(1, length(params.timepoint)-1, b)
+    plot_ERP(visual, 'xlim', [-0.025 0.1], 'colours', visual.colors, 'labels', visual.labels)
+    title(sprintf('%s', params.timepoint{b+1}))
+    hold on
+
+    % get y limits
+    visual.ylim(b, :) = get(gca, 'ylim');
+end
+
+% regulate the resolution
+for b = 1:length(params.timepoint)-1
+    subplot(1, length(params.timepoint)-1, b)
+    ylim([0, max(visual.ylim(:, 2))])
+    line([0, 0], [0, max(visual.ylim(:, 2))], 'Color', 'black', 'LineWidth', 2.5, 'LineStyle', '--')
+    legend(findobj(gca, 'Type', 'line', '-not', 'Color', 'black'));
+end
+
+% save figure and update
+saveas(fig, sprintf('%s\\figures\\group_change_GFP.png', folder.output))
 figure_counter = figure_counter + 1;
 
 % save the dataset and clean up
@@ -1496,6 +1535,7 @@ function plot_ERP(input, varargin)
 %           legend_loc --> legend location (default 'southeast')
 %           eoi --> label of a channel to be highlighted
 %           reverse --> 'on'/'off'(default) - flips y axis
+%           interpolated --> time window that was interpolated
 % =========================================================================  
 % set defaults
 x_limits = [0,0];
@@ -1510,6 +1550,7 @@ end
 legend_loc = 'southeast';
 highlight = false;
 reverse = false;
+interpolate = false;
 
 % check for varargins
 if ~isempty(varargin)
@@ -1565,7 +1606,15 @@ if ~isempty(varargin)
     i = find(strcmpi(varargin, 'eoi'));
     if ~isempty(i)
         eoi = varargin{i + 1};
+        eoi_n = find(contains(input.chanlabels, eoi));
         highlight = true;
+    end 
+
+    % interpolated interval - default off
+    j = find(strcmpi(varargin, 'interpolated'));
+    if ~isempty(j)
+        interpolate_toi = varargin{j + 1};
+        interpolate = true;
     end 
 
     % reverse y axis - default off
@@ -1591,13 +1640,21 @@ if y_limits(1) == 0 && y_limits(2) == 0
     y_limits = ylim;
 end
 
-% plot stimulus
-line([0, 0], y_limits, 'Color', 'black', 'LineWidth', 2.5, 'LineStyle', '--')
-
 % highlight channel if required
 if highlight
-    P(end + 1) = plot(input.x, input.data(eoi, :), 'Color', [0.9216    0.1490    0.1490], 'LineWidth', 3);
+    P(end + 1) = plot(input.x, input.data(eoi_n, :), 'Color', [0.9216    0.1490    0.1490], 'LineWidth', 4);
+    hold on
 end
+
+% shade interpolated window if required
+if interpolate
+    interpolate_x = [interpolate_toi(1), interpolate_toi(2), interpolate_toi(2), interpolate_toi(1)];
+    interpolate_y = [y_limits(1), y_limits(1), y_limits(2), y_limits(2)];
+    fill(interpolate_x, interpolate_y, [0.5 0.5 0.5], 'FaceAlpha', 0.5, 'EdgeColor', 'none');
+end
+
+% plot stimulus
+line([0, 0], y_limits, 'Color', 'black', 'LineWidth', 2.5, 'LineStyle', '--')
 
 % plot legend if required
 if plot_legend 
