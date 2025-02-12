@@ -1256,11 +1256,56 @@ figure_counter = figure_counter + 1;
 % save the dataset and clean up
 TEP_new_data = dataset;
 save(output_file, 'TEP_new_data', '-append')
-clear a b c s data header baseline fig screen_size visual dataset
+clear a b c s data header baseline fig screen_size visual 
 fprintf('section 7 finished.\n')
 
-%% 8) statistics and export
-%% 9) final visualization
+%% 8) export for Ragu
+% ----- section input -----
+params.prefix = 'icfilt ica ar ffilt sspsir';
+params.subjects = 20;
+params.toi = [-0.1 0.4];
+% -------------------------
+fprintf('section 8: export for Ragu\n')
+
+% update
+load(output_file, 'TEP_new_data')
+dataset = TEP_new_data;
+
+% calculate crop limits
+load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')                   
+x_start = (params.toi(1) - header.xstart)/header.xstep + 1;
+x_end = (params.toi(2) - header.xstart)/header.xstep;
+
+% write text files for Ragu
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)  
+        for s = 1:params.subjects
+            % select data
+            data = squeeze(dataset.normalized(a, b, s, :, x_start:x_end))';
+
+            % save as .csv               
+            name = sprintf('%s_%s_%s_%s.csv', study, TEP_new(s).ID, params.condition{a}, params.timepoint{b}); 
+            writematrix(data, sprintf('%s\\export\\%s', folder.output, name))
+        end
+    end
+end
+
+% create the montage file
+name = sprintf('%s\\export\\%s_montage.xyz', folder.output, study);  
+fileID = fopen(name, 'a');
+fprintf(fileID, '30\r\n');
+for c = 1:length(params.chanlocs)
+    fprintf(fileID, '%.4f %.4f %.4f %s\r\n', ...
+        params.chanlocs(c).X, params.chanlocs(c).Y, params.chanlocs(c).Z, params.chanlocs(c).labels);
+end
+fclose(fileID)
+
+% clear and move on
+clear a b c s header x_start x_end data name fileID
+fprintf('section 8 finished.\n')
+
+%% statistics and export
+%% final visualization
 %% code scraps
 % adjust history for ICA
 for a = 2:length(params.condition) 
