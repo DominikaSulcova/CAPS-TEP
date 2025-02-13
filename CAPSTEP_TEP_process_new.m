@@ -1132,7 +1132,7 @@ visual.CI_lower = dataset.visual_mean.CI_lower;
 % plot 
 plot_ERP(visual, 'xlim', [-0.1 0.4], 'colours', visual.colors, 'legend', 'off', 'shading', 'off', 'interpolated', [-0.005 0.01], 'eoi', 'Cz')
 
-% save figure and update
+% save figure and update counter
 saveas(fig, sprintf('%s\\figures\\group_avg.png', folder.output))
 figure_counter = figure_counter + 1;
 
@@ -1197,7 +1197,7 @@ for a = 1:length(params.condition)
     end
 end
 
-% save figure and update
+% save figure and update counter
 saveas(fig, sprintf('%s\\figures\\group_change_butterfly.png', folder.output))
 figure_counter = figure_counter + 1;
 
@@ -1249,7 +1249,7 @@ for b = 1:length(params.timepoint)-1
     legend(findobj(gca, 'Type', 'line', '-not', 'Color', 'black'));
 end
 
-% save figure and update
+% save figure and update counter
 saveas(fig, sprintf('%s\\figures\\group_change_GFP.png', folder.output))
 figure_counter = figure_counter + 1;
 
@@ -1304,7 +1304,237 @@ fclose(fileID)
 clear a b c s header x_start x_end data name fileID
 fprintf('section 8 finished.\n')
 
-%% statistics and export
+%% 9) randomization statistics 
+% ----- section input -----
+params.prefix = 'icfilt ica ar ffilt sspsir';
+params.toi = [0.01 0.4];
+params.permutations = 1000;
+params.alpha = 0.05;
+params.plot = [-0.05 0.5];
+% -------------------------
+fprintf('section 9: randomization statistics\n')
+
+% update
+load(output_file, 'TEP_new_data')
+dataset = TEP_new_data.normalized;
+
+% load dataset information
+load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')
+params.x = (0:header.datasize(6)-1)*header.xstep + header.xstart;
+params.chanlocs = header.chanlocs;
+
+% identify analysed time window
+toi = find(params.x >= params.toi(1) & params.x <= params.toi(2));
+
+% initialize output
+p_values = NaN(size(dataset, 1), size(dataset, 2) - 1, size(dataset, 4), length(toi));
+p_values_correct = ones(size(p_values));
+t_values = NaN(size(p_values));
+
+% perform sample-wise paired t-test
+fprintf('computing sample-wise paired t-test: ')
+for a = 1:size(dataset, 1)
+    for b = 2:size(dataset, 2)
+        fprintf('. ')
+        for c = 1:size(dataset, 4)
+            for d = 1:length(toi)
+                % extract pre-patch and post-patch values across subjects
+                pre_patch = squeeze(dataset(a, 1, :, c, toi(d))); 
+                post_patch = squeeze(dataset(a, b, :, c, toi(d))); 
+                
+                % perform paired t-test
+                [~, p, ~, stats] = ttest(post_patch, pre_patch);
+                
+                % store results
+                p_values(a, b-1, c, d) = p;
+                t_values(a, b-1, c, d) = stats.tstat;
+            end
+        end
+    end
+end
+fprintf('done.\n')
+
+% run permutations to construct null distribution 
+fprintf('constructing null distribution: ')
+for perm = 1:params.permutations
+    % update
+    if mod(perm, 50) == 0
+        fprintf('. ')
+    end
+
+    % initiate output
+    perm_p_values = NaN(size(p_values)); 
+    perm_cluster_stats = [];
+
+    % prepare shuffled dataset
+    dataset_shuffled = dataset;
+    for s = 1:size(dataset, 3)
+        for a = 1:size(dataset, 1)
+            for c = 1:size(dataset, 4)
+                for b = 2:size(dataset, 2) 
+                    % extract pre-patch and post-patch samples from the
+                    % analysed time window
+                    pre_patch = squeeze(dataset(a, 1, s, c, toi))';
+                    post_patch = squeeze(dataset(a, b, s, c, toi))';
+
+                    % combine data and shuffle labels
+                    combined_samples = [pre_patch, post_patch];
+                    shuffled_labels = randperm(length(combined_samples));
+                
+                    % reassign shuffled data
+                    dataset_shuffled(a, 1, s, c, toi) = combined_samples(shuffled_labels(1:length(toi)));
+                    dataset_shuffled(a, b, s, c, toi) = combined_samples(shuffled_labels(length(toi)+1:end));
+                end
+            end
+        end
+    end
+
+    % recalculate t-tests on shuffled data
+    for a = 1:size(dataset, 1)
+        for b = 2:size(dataset, 2)
+            for c = 1:size(dataset, 4)
+                for d = 1:length(toi)
+                    % extract pre-patch and post-patch values across subjects
+                    pre_patch = squeeze(dataset_shuffled(a, 1, :, c, toi(d)));
+                    post_patch = squeeze(dataset_shuffled(a, b, :, c, toi(d)));
+
+                    % paired t-test on shuffled samples
+                    [~, p, ~, stats] = ttest(post_patch, pre_patch);
+
+                    % store results
+                    perm_p_values(a, b-1, c, d) = p;
+                    perm_t_values(a, b-1, c, d) = stats.tstat;
+                end
+            end
+        end
+    end
+
+    % identify clusters in permuted data
+    perm_cluster_stats = [];
+    for a = 1:size(dataset, 1)
+        for b = 1:size(dataset, 2)-1
+            for c = 1:size(dataset, 4)
+                % find significant time samples
+                significant_samples = find(perm_p_values(a, b, c, :) < params.alpha);
+
+                % compute cluster-level statistic = sum of t-values
+                if ~isempty(significant_samples)
+                    clusters = find_contiguous_clusters(significant_samples);           
+                    for cluster = 1:length(clusters)
+                        perm_cluster_stats = [perm_cluster_stats, sum(abs(perm_t_values(a, b, c, clusters{cluster})))];
+                    end
+                end
+            end
+        end
+    end
+
+    % store max cluster statistic from this permutation
+    if ~isempty(perm_cluster_stats)
+        max_cluster_stats(perm) = max(perm_cluster_stats);
+    else
+        max_cluster_stats(perm) = 0;
+    end
+end
+fprintf('done.\n')
+
+% compute statistical threshold = 95th percentile of null distribution
+threshold = prctile(max_cluster_stats, 95);
+
+% identify significant clusters based on permutation results
+fprintf('correcting p-values: ')
+for a = 1:size(dataset, 1)
+    for b = 1:size(dataset, 2)-1
+        for c = 1:size(dataset, 4)
+            % extract original clusters of p-values
+            significant_samples = find(p_values(a, b, c, :) < params.alpha);
+            if ~isempty(significant_samples)
+                clusters = find_contiguous_clusters(significant_samples);
+            
+                % retain only clusters that pass the threshold
+                if ~isempty(clusters)
+                    for cluster = 1:length(clusters)
+                        % compute overall 
+                        cluster_t = sum(abs(t_values(a, b, c, clusters{cluster})));
+                        if cluster_t > threshold
+                            p_values_correct(a, b, c, clusters{cluster}) = 0.05; 
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+fprintf('done.\n')
+
+% save to the output structures 
+TEP_new_data.shuffled = dataset_shuffled;
+TEP_new_measures = struct;
+TEP_new_measures.randomization.toi = params.toi;
+TEP_new_measures.randomization.p_values = p_values;
+TEP_new_measures.randomization.t_values = t_values;
+TEP_new_measures.randomization.cluster_null_distribution = max_cluster_stats;
+TEP_new_measures.randomization.threshold = threshold;
+row_counter = 1;
+for a = 1:size(dataset, 1)
+    for b = 1:size(dataset, 2)-1
+        for c = 1:size(dataset, 4)
+            % find significant samples
+            significant_samples = find(p_values_correct(a, b, c, :) == 0.05);
+            
+            if ~isempty(significant_samples)                
+                % identify contiguous clusters of significance
+                clusters = find_contiguous_clusters(significant_samples);
+                
+                % store results
+                for cluster = 1:length(clusters)
+                    % convert sample indices to actual time values
+                    significant_times = params.x((params.toi(1) - 0.001 + 1.5)*1000 + clusters{cluster});
+                    
+                    % encode
+                    TEP_new_measures.randomization.clusters(row_counter).condition = params.condition{a};
+                    TEP_new_measures.randomization.clusters(row_counter).timepoint = params.timepoint{b+1};
+                    TEP_new_measures.randomization.clusters(row_counter).electrode_n = c; 
+                    TEP_new_measures.randomization.clusters(row_counter).electrode_label = params.chanlocs(c).labels; 
+                    TEP_new_measures.randomization.clusters(row_counter).times = significant_times;
+                end
+
+                % update row counter
+                row_counter = row_counter + 1;
+            end
+        end
+    end
+end
+save(output_file, 'TEP_new_data', 'TEP_new_measures', '-append')
+
+%% plot significant clusters for each condition and post-patch timepoint
+for a = 1:size(dataset, 1)
+    for b = 1:size(dataset, 2)-1
+        % launch the figure
+        fig = figure(figure_counter);
+        screen_size = get(0, 'ScreenSize');
+        set(fig, 'Position', [screen_size(3)/5, screen_size(4)/4, screen_size(3)/2, screen_size(4) / 1.25])
+
+        % identify electrodes that contain significant clusters
+
+        % plot the clusters
+        subplot(1, 4, [1:3])
+
+        % plot the electrodes
+        subplot(1, 4, 4)
+
+        % save figure and update counter
+        saveas(fig, sprintf('%s\\figures\\change_%s_%s.png', folder.output, params.condition{a}, params.timepoint{b+1}))
+        figure_counter = figure_counter + 1;
+    end
+end
+
+%% clear and move on
+clear a b c d p header pre_patch post_patch stats p_values t_values toi ...
+    combined_samples shuffled_labels dataset_shuffled perm_p_values perm_t_values perm_cluster_stats...
+    threshold max_cluster_stats significant_samples clusters cluster cluster_t perm significant_times ...
+    row_counter fig screen_size
+fprintf('section 9 finished.\n')
+
 %% final visualization
 %% code scraps
 % adjust history for ICA
@@ -1736,4 +1966,24 @@ ylabel('amplitude (\muV)')
 set(gca, 'FontSize', 14)
 ylim(y_limits)
 set(gca, 'Layer', 'Top')
+end
+function clusters = find_contiguous_clusters(significant_samples)
+% =========================================================================
+% identify clusters of consecutive samples
+% significant_samples = a vector of indexes of samples with p < alpha
+% =========================================================================  
+if isempty(significant_samples)
+    return; 
+end    
+clusters = {};
+current_cluster = [significant_samples(1)];
+for i = 2:length(significant_samples)
+    if significant_samples(i) == significant_samples(i-1) + 1
+        current_cluster = [current_cluster, significant_samples(i)];
+    else
+        clusters{end+1} = current_cluster;
+        current_cluster = [significant_samples(i)];
+    end
+end
+clusters{end+1} = current_cluster; 
 end
