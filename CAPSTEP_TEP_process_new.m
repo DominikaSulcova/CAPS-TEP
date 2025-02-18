@@ -1087,13 +1087,61 @@ for a = 1:length(params.condition)
 end
 fprintf('done.\n')
 
-% flip normalized data to homogenize side of stimulation
-%   - check for each subject and condition at which side was stimulation
-%     delivered 
-%   - in case the right hemisphere was stimulated, flip the data
-%   - plot all the figures using the homogenized dataset
-%   - add process entries to the info structure
-dataset.normalized_flipped
+% prepare flip dictionary
+labels_flipped = params.labels;
+for i = 1:length(params.labels)
+    electrode_n = str2num(params.labels{i}(end));
+    if isempty(electrode_n)
+    else
+        if mod(electrode_n,2) == 1              % odd number --> left hemisphere                    
+            label_new = params.labels{i}(1:end-1);
+            label_new = [label_new num2str(electrode_n + 1)];
+            a = find(strcmpi(params.labels, label_new));
+            if isempty(a)
+            else
+                labels_flipped{i} = label_new;
+            end
+        else                                    % even number --> right hemisphere 
+            label_new = params.labels{i}(1:end-1);
+            label_new = [label_new num2str(electrode_n - 1)];
+            a = find(strcmpi(params.labels, label_new));
+            if isempty(a)
+            else
+                labels_flipped{i} = label_new;
+            end
+        end
+    end
+end
+labels_dict = cat(1, params.labels, labels_flipped)';
+
+% flip normalized data to homogenize side of stimulation --> if right, flip
+fprintf('flipping data: ')
+addpath(genpath([folder.toolbox '\letswave 6']));
+header.datasize(1) = 1;
+for s = 1:params.subjects 
+    fprintf('. ')
+    for a = 1:length(params.condition)
+        for b = 1:length(params.timepoint)
+            if contains(TEP_new(s).stimulation(a).hemisphere, 'right')
+                data(1, :, 1, 1, 1, :) = squeeze(dataset.normalized(a, b, s, :, :));
+                [header, data, ~] = RLW_flip_electrodes(header, data, labels_dict);
+                dataset.normalized_flipped(a, b, s, :, :) = squeeze(data);
+            else
+                dataset.normalized_flipped(a, b, s, :, :) = dataset.normalized(a, b, s, :, :);
+            end
+        end
+    end
+end
+fprintf('done.\n')
+
+% % export to letswave to check the flip
+% header.name = 'original';
+% data(1, :, 1, 1, 1, :) = squeeze(dataset.normalized(2, 1, 1, :, :));
+% save('original.mat', 'data'); save('original.lw6', 'header'); 
+% header.name = 'flipped';
+% data(1, :, 1, 1, 1, :) = squeeze(dataset.normalized_flipped(2, 1, 1, :, :));
+% save('flipped.mat', 'data'); save('flipped.lw6', 'header'); 
+% letswave
 
 % calculate change from baseline + its GFP
 for a = 1:length(params.condition)
@@ -1112,7 +1160,7 @@ visual.chanlabels = params.labels;
 visual.t_value = tinv(0.975, size(dataset.change_GFP, 3) - 1); 
 
 % ============== overall average TEP ==============
-fprintf('plotting overall average TEPs... \n')
+fprintf('plotting overall average TEP... \n')
 
 % extract overall mean values
 for c = 1:size(dataset.normalized_flipped, 4)
@@ -1141,7 +1189,25 @@ visual.CI_lower = dataset.visual_mean.CI_lower;
 plot_ERP(visual, 'xlim', [-0.1 0.4], 'colours', visual.colors, 'legend', 'off', 'shading', 'off', 'interpolated', [-0.005 0.01], 'eoi', 'Cz')
 
 % save figure and update counter
-saveas(fig, sprintf('%s\\figures\\group_avg.png', folder.output))
+saveas(fig, sprintf('%s\\figures\\group_avg.svg', folder.output))
+figure_counter = figure_counter + 1;
+
+% ============== overall average GFP ==============
+fprintf('plotting overall average GFP... \n')
+
+% launch the figure
+fig = figure(figure_counter);
+screen_size = get(0, 'ScreenSize');
+set(fig, 'Position', [screen_size(3)/4, screen_size(4)/4, screen_size(3)/2, screen_size(4) / 2])
+
+% select the data
+visual.data = std(dataset.visual_mean.data, 1, 1); 
+    
+% plot 
+plot_ERP(visual, 'xlim', [-0.1 0.4], 'colours', [0 0 0], 'legend', 'off', 'shading', 'off', 'interpolated', [-0.005 0.01])
+
+% save figure and update counter
+saveas(fig, sprintf('%s\\figures\\group_GFP.svg', folder.output))
 figure_counter = figure_counter + 1;
 
 % ============ plot change - butterfly ============
@@ -1264,7 +1330,8 @@ figure_counter = figure_counter + 1;
 % save the dataset and clean up
 TEP_new_data = dataset;
 save(output_file, 'TEP_new_data', '-append')
-clear a b c s data header baseline fig screen_size visual 
+clear a b c s i data header data baseline fig screen_size visual electrode_n ...
+    labels_flipped labels_dict label_new
 fprintf('section 7 finished.\n')
 
 %% 8) export for Ragu
@@ -1314,27 +1381,127 @@ fprintf('section 8 finished.\n')
 
 %% 9) import microstates
 % ----- section input -----
+params.filenames = {'CAPSTEP_new.mat' 'microstates_export.xlsx'};
+params.MS_labels = {'N15' 'P180' 'P30' 'N45_P60' 'N100' '' ''};
+params.MS_variables = {'On' 'Off' 'Dur' 'AUC' 'COG' 'GFP'};
+params.MS_measures = {'onset' 'offset' 'duration' 'AUC' 'COG' 'GFP'};
+params.MS_manual.N15 = [11, 21];
+params.MS_manual.P180 = [143, 234];
+params.MS_manual.P30 = [25, 40];
+params.MS_manual.N45_P60 = [41, 84];
+params.MS_manual.N100 = [85, 122];
 % -------------------------
 fprintf('section 9: import microstate info\n')
 
-% import microstate data
+% load & save microstate maps
+load(sprintf('%s\\microstates\\%s', folder.output, params.filenames{1}))
+for a = 1:length(params.MS_labels)
+    if isempty(params.MS_labels{a})
+        idx(a) = false;
+    else
+        idx(a) = true;
+    end
+end
+TEP_new_measures.microstates.labels = params.MS_labels(idx);
+TEP_new_measures.microstates.maps = rd.MSMaps(idx, :);
+save(output_file, 'TEP_new_measures', '-append')
 
-% save to output structures
-save(output_file, 'TEP_new_data', 'TEP_new_measures', '-append')
+% identify export Excel
+export.file = sprintf('%s\\microstates\\%s', folder.output, params.filenames{2});
+[~, export.sheets] = xlsfinfo(export.file);
+
+% identify conditions
+counter = 1;
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint) 
+        params.MS_conditions{counter} = sprintf('%s_%s', params.condition{a}, params.timepoint{b});
+        counter = counter + 1;
+    end
+end
+TEP_new_measures.microstates.conditions = params.MS_conditions;
+
+% initiate output fields
+for c = 1:length(params.MS_labels) 
+    if idx(c)
+        for d = 1:length(params.MS_measures)
+            statement = sprintf('TEP_new_measures.microstates.%s.%s = [];', params.MS_labels{c}, params.MS_measures{d});
+            eval(statement)
+        end
+    end
+end
+
+% extract data from the Excel
+for e = 1:numel(export.sheets)
+    if contains(export.sheets{e}, 'Class')
+        % identify microstate class
+        export.class = str2double(regexp(export.sheets{e}, '\d+', 'match')); 
+        if idx(export.class)
+            % identify microstate label
+            export.label = params.MS_labels{export.class};
+    
+            % read the sheet as a table
+            export.table = readtable(export.file, 'Sheet', export.sheets{e});
+
+            % extract all variables
+            for c = 1:length(params.MS_measures)
+                for d = 1:length(params.MS_conditions)
+                    % extract the right column
+                    export.column = ismember(export.table.Properties.VariableNames, sprintf('%s_%s', params.MS_conditions{d}, params.MS_variables{c}));
+                    export.values = table2cell(export.table(:, export.column));
+                    
+                    % save to the output structure
+                    for s = 1:height(export.table)                        
+                        statement = sprintf('TEP_new_measures.microstates.%s.%s(s).%s = export.values{s};', ...
+                            params.MS_labels{export.class}, params.MS_measures{c}, params.MS_conditions{d});
+                        eval(statement)
+                    end
+                end
+            end
+
+            % calculate average across all subjects and conditions
+            for c = 1:length(params.MS_measures)
+                % calculate the mean
+                data_all = [];
+                for d = 1:length(params.MS_conditions)
+                    statement = sprintf('data = [TEP_new_measures.microstates.%s.%s.%s];', ...
+                        params.MS_labels{export.class}, params.MS_measures{c}, params.MS_conditions{d});
+                    eval(statement)
+                    data_all = [data_all data];
+                end
+                
+                % save to the output structure
+                statement = sprintf('TEP_new_measures.microstates.%s.mean.%s = nanmean(data);', ...
+                    params.MS_labels{export.class}, params.MS_measures{c}, params.MS_labels{export.class}, params.MS_measures{c});
+                eval(statement)
+            end
+        end
+    end
+end
+
+% encode manually measured time windows
+for a = 1:length(params.MS_labels)
+    if idx(a)
+        statement = sprintf('TEP_new_measures.microstates.%s.toi = params.MS_manual.%s;', params.MS_labels{a}, params.MS_labels{a});
+        eval(statement)
+    end
+end
+save(output_file, 'TEP_new_measures', '-append')
 
 % clear and move on
-clear 
+clear a b c d e s rd idx export counter statement data data_all
 fprintf('section 9 finished.\n')
 
-%% 10) randomization statistics 
+%% 10) statistics: change from baseline 
 % ----- section input -----
 params.prefix = 'icfilt ica ar ffilt sspsir';
 params.toi = [0.01 0.4];
 params.permutations = 1000;
 params.alpha = 0.05;
 params.plot = [-0.025 0.4];
+params.components = {'N15' 'P30' 'N45' 'P60' 'N100' 'P180'};
+params.N45_offset = 58;
 % -------------------------
-fprintf('section 10: randomization statistics\n')
+fprintf('section 10: statistics - change from baseline\n')
 
 % update
 load(output_file, 'TEP_new_data')
@@ -1488,13 +1655,13 @@ for a = 1:size(dataset, 1)
 end
 fprintf('done.\n')
 
-% save to the output structures 
+% save data and measures to the output structures 
 TEP_new_data.shuffled = dataset_shuffled;
-TEP_new_measures.randomization.toi = params.toi;
-TEP_new_measures.randomization.p_values = p_values;
-TEP_new_measures.randomization.t_values = t_values;
-TEP_new_measures.randomization.cluster_null_distribution = max_cluster_stats;
-TEP_new_measures.randomization.threshold = threshold;
+TEP_new_measures.stats_time.toi = params.toi;
+TEP_new_measures.stats_time.p_values = p_values;
+TEP_new_measures.stats_time.t_values = t_values;
+TEP_new_measures.stats_time.cluster_null_distribution = max_cluster_stats;
+TEP_new_measures.stats_time.threshold = threshold;
 row_counter = 1;
 for a = 1:size(dataset, 1)
     for b = 1:size(dataset, 2)-1
@@ -1512,11 +1679,11 @@ for a = 1:size(dataset, 1)
                     significant_times = params.x((params.toi(1) - 0.001 + 1.5)*1000 + clusters{cluster});
                     
                     % encode
-                    TEP_new_measures.randomization.clusters(row_counter).condition = params.condition{a};
-                    TEP_new_measures.randomization.clusters(row_counter).timepoint = params.timepoint{b+1};
-                    TEP_new_measures.randomization.clusters(row_counter).electrode_n = c; 
-                    TEP_new_measures.randomization.clusters(row_counter).electrode_label = params.chanlocs(c).labels; 
-                    TEP_new_measures.randomization.clusters(row_counter).times{cluster} = significant_times;
+                    TEP_new_measures.stats_time.clusters(row_counter).condition = params.condition{a};
+                    TEP_new_measures.stats_time.clusters(row_counter).timepoint = params.timepoint{b+1};
+                    TEP_new_measures.stats_time.clusters(row_counter).electrode_n = c; 
+                    TEP_new_measures.stats_time.clusters(row_counter).electrode_label = params.chanlocs(c).labels; 
+                    TEP_new_measures.stats_time.clusters(row_counter).times{cluster} = significant_times;
                 end
 
                 % update row counter
@@ -1527,16 +1694,28 @@ for a = 1:size(dataset, 1)
 end
 save(output_file, 'TEP_new_data', 'TEP_new_measures', '-append')
 
-% flip electodes in all the results!
+% identify component TOIs
+for c = 1:length(params.components)
+    if strcmp(params.components{c}, 'N45')
+        params.TOI(c, 1) = (TEP_new_measures.microstates.N45_P60.toi(1) + 0.5)/1000;
+        params.TOI(c, 2) = (params.N45_offset - 0.5)/1000;
+    elseif strcmp(params.components{c}, 'P60')
+        params.TOI(c, 1) = (params.N45_offset + 0.5)/1000; 
+        params.TOI(c, 2) = (TEP_new_measures.microstates.N45_P60.toi(2) - 0.5)/1000;
+    else
+        statement = sprintf('params.TOI(c, :) = TEP_new_measures.microstates.%s.toi;', params.components{c});  
+        eval(statement)
+        params.TOI(c, 1) = (params.TOI(c, 1) + 0.5)/1000;
+        params.TOI(c, 2) = (params.TOI(c, 2) - 0.5)/1000;
+    end
+end
+
 % plot significant clusters for each condition and post-patch timepoint
-% to change:
-%   - tick all 30 electrodes on the y-axis
-%   - plot time windows of individual TEP components based on microstate
-%     duration 
-% plot average change across individual component time windows and mark
-% significant electrodes
 colors.palette = hsv(size(dataset, 4));
-colors.used = [];
+y.height = 0.8;
+y.offset = 1:size(dataset, 4);
+y.ticks = y.offset + y.height/2; 
+y.labels = params.labels; 
 for a = 1:size(dataset, 1)
     for b = 1:size(dataset, 2)-1
         % launch the figure
@@ -1545,17 +1724,17 @@ for a = 1:size(dataset, 1)
         set(fig, 'Position', [screen_size(3)/4, screen_size(4)/4, screen_size(3)/2, screen_size(4) / 1.5])
         hold on
 
-        % initiate y-axis info
-        y.height = 0.8;
-        y.offset = 1; 
-        y.ticks = []; 
-        y.labels = {}; 
+        % plot component TOIs
+        for c = 1:length(params.components)
+            rectangle('Position', [params.TOI(c, 1), y.ticks(1) - 1, params.TOI(c, 2) - params.TOI(c, 1), (y.ticks(end) + 1) - (y.ticks(1) - 1)], ...
+                  'FaceColor', [0.9020    0.9020    0.9020], 'EdgeColor', 'none'); 
+        end
 
         % select all electrodes containing significant clusters 
         idx = logical([]);
-        for c = 1:length(TEP_new_measures.randomization.clusters)
-            if strcmp(TEP_new_measures.randomization.clusters(c).condition, params.condition{a})
-                if strcmp(TEP_new_measures.randomization.clusters(c).timepoint, params.timepoint{b+1})
+        for c = 1:length(TEP_new_measures.stats_time.clusters)
+            if strcmp(TEP_new_measures.stats_time.clusters(c).condition, params.condition{a})
+                if strcmp(TEP_new_measures.stats_time.clusters(c).timepoint, params.timepoint{b+1})
                     idx(c) = true;
                 else
                     idx(c) = false;
@@ -1564,15 +1743,15 @@ for a = 1:size(dataset, 1)
                 idx(c) = false;
             end
         end
-        significant_electrodes = TEP_new_measures.randomization.clusters(idx);
+        significant_electrodes = TEP_new_measures.stats_time.clusters(idx);
 
         % plot the clusters
         for e = 1:length(significant_electrodes)
-            % assign y position
-            y.ticks(e) = y.offset; 
+            % assign y offset
+            y.this = y.offset(significant_electrodes(e).electrode_n);
 
             % assign color
-            colors.used(a, b, e, :) = colors.palette(significant_electrodes(e).electrode_n, :);
+            colors.this = colors.palette(significant_electrodes(e).electrode_n, :);
 
             % loop through clusters
             for d = 1:length(significant_electrodes(e).times)                 
@@ -1582,16 +1761,9 @@ for a = 1:size(dataset, 1)
                 x.width = x.end - x.start;               
                     
                 % plot rectangle
-                rectangle('Position', [x.start, y.ticks(e), x.width, y.height], ...
-                          'FaceColor', colors.used(a, b, e, :), 'EdgeColor', 'none'); 
+                rectangle('Position', [x.start, y.this, x.width, y.height], ...
+                          'FaceColor', colors.this, 'EdgeColor', 'none'); 
             end
-
-            % store y-axis info
-            y.ticks(e) = y.ticks(e) + y.height/2;
-            y.labels{e} = significant_electrodes(e).electrode_label; 
-
-            % move to next stack level
-            y.offset = y.offset + 1;
         end
 
         % adjust the figure
@@ -1599,6 +1771,7 @@ for a = 1:size(dataset, 1)
         xlabel('time (s)');
         ylabel('electrodes');
         xlim([params.plot(1) params.plot(2)]);
+        ylim([y.ticks(1) - 1, y.ticks(end) + 1])
         set(gca, 'FontSize', 14)
         
         % set y-ticks at center of rectangles
@@ -1611,27 +1784,114 @@ for a = 1:size(dataset, 1)
         ax.XAxisLocation = 'bottom';
         ax.YAxisLocation = 'left';
         ax.TickDir = 'out'; 
-        ax.XColor = [0.5020    0.5020    0.5020]; 
-        ax.YColor = [0.5020    0.5020    0.5020]; 
+        set(gca, 'Layer', 'Top')
 
         % plot stimulus
         y.limits = ylim;
-        line([0, 0], y.limits, 'Color', 'black', 'LineWidth', 2.5, 'LineStyle', '--')
+        line([0, 0], y.limits, 'Color', [0.5020    0.5020    0.5020], 'LineWidth', 2.5, 'LineStyle', '--')
 
         % save figure and update counter
-        saveas(fig, sprintf('%s\\figures\\change_%s_%s.png', folder.output, params.condition{a}, params.timepoint{b+1}))
+        saveas(fig, sprintf('%s\\figures\\change_%s_%s.svg', folder.output, params.condition{a}, params.timepoint{b+1}))
         figure_counter = figure_counter + 1;
     end
 end
 
-%% clear and move on
+% plot average change across individual component time windows 
+dataset = TEP_new_data.change;
+for a = 1:size(dataset, 1)
+    for b = 1:size(dataset, 2)-1
+        for c = 1:length(params.components)
+            % identify x limits
+            x.start = (params.TOI(c, 1) - 0.0005 - header.xstart)/header.xstep;
+            x.end = (params.TOI(c, 2) + 0.0005 - header.xstart)/header.xstep;
+    
+            % calculate mean change
+            for e = 1:size(dataset, 4)
+                y.data(e) = mean(squeeze(dataset(a, b, :, e, x.start : x.end)), 'all');
+            end
+
+            % plot the topography
+            fig = figure(figure_counter);
+            topoplot(double(y.data'), params.chanlocs, 'style', 'map', 'shading', 'interp', 'whitebk', 'on')
+            title(sprintf('%s: %s - %s', params.components{c}, params.condition{a}, params.timepoint{b+1}))
+            set(gca, 'FontSize', 14)
+
+            % add colorbar
+            cb = colorbar('Location', 'southoutside');  
+            set(cb, 'Orientation', 'horizontal');  
+            ylabel(cb, 'amplitude (µV)', 'FontSize', 12);
+
+            % save figure and update counter
+            saveas(fig, sprintf('%s\\figures\\change_topo_%s_%s_%s.svg', folder.output, params.components{c}, params.condition{a}, params.timepoint{b+1}))
+            figure_counter = figure_counter + 1;
+        end
+    end
+end
+
+% clear and move on
 clear a b c d e p header pre_patch post_patch stats p_values t_values toi ...
     combined_samples shuffled_labels dataset_shuffled perm_p_values perm_t_values perm_cluster_stats...
     threshold max_cluster_stats significant_samples clusters cluster cluster_t perm significant_times ...
-    row_counter fig screen_size x y colors idx significant_electrodes ax
+    row_counter fig screen_size x y colors idx significant_electrodes ax statement data cb visual dataset
 fprintf('section 10 finished.\n')
 
-%% final visualization
+%% 11) statistics: differences across conditions
+% ----- section input -----
+params.prefix = 'icfilt ica ar ffilt sspsir';
+params.toi = [0.01 0.4];
+params.permutations = 1000;
+params.alpha = 0.05;
+params.plot = [-0.025 0.4];
+% -------------------------
+fprintf('section 11: statistics - differences across conditions\n')
+
+% update
+load(output_file, 'TEP_new_data')
+dataset = TEP_new_data.change;
+
+% save data and measures to the output structures 
+TEP_new_data.shuffled_condition = dataset_shuffled;
+TEP_new_measures.stats_condition.toi = params.toi;
+TEP_new_measures.stats_condition.p_values = p_values;
+TEP_new_measures.stats_condition.t_values = t_values;
+TEP_new_measures.stats_condition.cluster_null_distribution = max_cluster_stats;
+TEP_new_measures.stats_condition.threshold = threshold;
+row_counter = 1;
+for a = 1:size(dataset, 1)
+    for b = 1:size(dataset, 2)-1
+        for c = 1:size(dataset, 4)
+            % find significant samples
+            significant_samples = find(p_values_correct(a, b, c, :) == 0.05);
+            
+            if ~isempty(significant_samples)                
+                % identify contiguous clusters of significance
+                clusters = find_contiguous_clusters(significant_samples);
+                
+                % store results
+                for cluster = 1:length(clusters)
+                    % convert sample indices to actual time values
+                    significant_times = params.x((params.toi(1) - 0.001 + 1.5)*1000 + clusters{cluster});
+                    
+                    % encode
+                    TEP_new_measures.stats_condition.clusters(row_counter).condition = params.condition{a};
+                    TEP_new_measures.stats_condition.clusters(row_counter).timepoint = params.timepoint{b+1};
+                    TEP_new_measures.stats_condition.clusters(row_counter).electrode_n = c; 
+                    TEP_new_measures.stats_condition.clusters(row_counter).electrode_label = params.chanlocs(c).labels; 
+                    TEP_new_measures.stats_condition.clusters(row_counter).times{cluster} = significant_times;
+                end
+
+                % update row counter
+                row_counter = row_counter + 1;
+            end
+        end
+    end
+end
+save(output_file, 'TEP_new_data', 'TEP_new_measures', '-append')
+
+% clear and move on
+clear 
+fprintf('section 11 finished.\n')
+
 %% code scraps
 % adjust history for ICA
 for a = 2:length(params.condition) 
