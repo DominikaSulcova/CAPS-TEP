@@ -1504,8 +1504,10 @@ params.N45_offset = 58;
 fprintf('section 10: statistics - change from baseline\n')
 
 % update
-load(output_file, 'TEP_new_data')
+load(output_file, 'TEP_new_data', 'TEP_new_measures')
 dataset = TEP_new_data.normalized_flipped;
+cd(folder.output)
+clear dataset subject_idx
 
 % load dataset information
 load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')
@@ -1547,7 +1549,7 @@ fprintf('done.\n')
 fprintf('constructing null distribution: ')
 for perm = 1:params.permutations
     % update
-    if mod(perm, 50) == 0
+    if mod(perm, 100) == 0
         fprintf('. ')
     end
 
@@ -1830,7 +1832,7 @@ end
 
 % clear and move on
 clear a b c d e p header pre_patch post_patch stats p_values t_values toi ...
-    combined_samples shuffled_labels dataset_shuffled perm_p_values perm_t_values perm_cluster_stats...
+    combined_samples shuffled_labels dataset_shuffled p_values_correct perm_p_values perm_t_values perm_cluster_stats...
     threshold max_cluster_stats significant_samples clusters cluster cluster_t perm significant_times ...
     row_counter fig screen_size x y colors idx significant_electrodes ax statement data cb visual dataset
 fprintf('section 10 finished.\n')
@@ -1843,11 +1845,150 @@ params.permutations = 1000;
 params.alpha = 0.05;
 params.plot = [-0.025 0.4];
 % -------------------------
-fprintf('section 11: statistics - differences across conditions\n')
+fprintf('section 11: statistics - differences across conditions and time\n')
 
 % update
-load(output_file, 'TEP_new_data')
+load(output_file, 'TEP_new_data', 'TEP_new_measures')
 dataset = TEP_new_data.change;
+cd(folder.output)
+clear subject_idx
+
+% load dataset information
+load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')
+params.x = (0:header.datasize(6)-1)*header.xstep + header.xstart;
+params.chanlocs = header.chanlocs;
+
+% identify analysed time window
+toi = find(params.x >= params.toi(1) & params.x <= params.toi(2));
+
+% initialize output
+p_values = NaN(size(dataset, 2) - 1, size(dataset, 4), length(toi));
+p_values_correct = ones(size(p_values));
+t_values = NaN(size(p_values));
+
+% perform sample-wise paired t-test
+fprintf('computing sample-wise paired t-test: ')
+for b = 1:size(dataset, 2)
+    fprintf('. ')
+    for c = 1:size(dataset, 4)
+        for d = 1:length(toi)
+            % extract data from both conditions across subjects
+            data_pain = squeeze(dataset(1, b, :, c, toi(d)))'; 
+            data_control = squeeze(dataset(2, b, :, c, toi(d)))'; 
+            
+            % perform paired t-test
+            [~, p, ~, stats] = ttest(data_pain, data_control);
+            
+            % store results
+            p_values(b, c, d) = p;
+            t_values(b, c, d) = stats.tstat;
+        end
+    end
+end
+fprintf('done.\n')
+
+% run permutations to construct null distribution 
+fprintf('constructing null distribution: ')
+for perm = 1:params.permutations
+    % update
+    if mod(perm, 100) == 0
+        fprintf('. ')
+    end
+
+    % initiate output
+    perm_p_values = NaN(size(p_values)); 
+    perm_cluster_stats = [];
+
+    % prepare shuffled dataset
+    dataset_shuffled = dataset;
+    for s = 1:size(dataset, 3)
+        for c = 1:size(dataset, 4)
+            for b = 1:size(dataset, 2) 
+                % extract data from both conditions across the analysed toi
+                data_pain = squeeze(dataset(1, b, s, c, toi))'; 
+                data_control = squeeze(dataset(2, b, s, c, toi))'; 
+
+                % combine data and shuffle labels
+                combined_samples = [data_control, data_pain];
+                shuffled_labels = randperm(length(combined_samples));
+            
+                % reassign shuffled data
+                dataset_shuffled(1, b, s, c, toi) = combined_samples(shuffled_labels(1:length(toi)));
+                dataset_shuffled(2, b, s, c, toi) = combined_samples(shuffled_labels(length(toi)+1:end));
+            end
+        end
+    end
+
+    % recalculate t-tests on shuffled data
+    for b = 1:size(dataset, 2)
+        for c = 1:size(dataset, 4)
+            for d = 1:length(toi)
+                % extract pre-patch and post-patch values across subjects
+                data_pain = squeeze(dataset_shuffled(1, b, :, c, toi(d)))'; 
+                data_control = squeeze(dataset_shuffled(2, b, :, c, toi(d)))'; 
+
+                % paired t-test on shuffled samples
+                [~, p, ~, stats] = ttest(data_pain, data_control);
+
+                % store results
+                perm_p_values(b, c, d) = p;
+                perm_t_values(b, c, d) = stats.tstat;
+            end
+        end
+    end
+
+    % identify clusters in permuted data
+    perm_cluster_stats = [];
+    for b = 1:size(dataset, 2)
+        for c = 1:size(dataset, 4)
+            % find significant time samples
+            significant_samples = find(perm_p_values(b, c, :) < params.alpha);
+
+            % compute cluster-level statistic = sum of t-values
+            if ~isempty(significant_samples)
+                clusters = find_contiguous_clusters(significant_samples);           
+                for cluster = 1:length(clusters)
+                    perm_cluster_stats = [perm_cluster_stats, sum(abs(perm_t_values(b, c, clusters{cluster})))];
+                end
+            end
+        end
+    end
+
+    % store max cluster statistic from this permutation
+    if ~isempty(perm_cluster_stats)
+        max_cluster_stats(perm) = max(perm_cluster_stats);
+    else
+        max_cluster_stats(perm) = 0;
+    end
+end
+fprintf('done.\n')
+
+% compute statistical threshold = 95th percentile of null distribution
+threshold = prctile(max_cluster_stats, 95);
+
+% identify significant clusters based on permutation results
+fprintf('correcting p-values: ')
+for b = 1:size(dataset, 2)
+    for c = 1:size(dataset, 4)
+        % extract original clusters of p-values
+        significant_samples = find(p_values(b, c, :) < params.alpha);
+        if ~isempty(significant_samples)
+            clusters = find_contiguous_clusters(significant_samples);
+        
+            % retain only clusters that pass the threshold
+            if ~isempty(clusters)
+                for cluster = 1:length(clusters)
+                    % compute overall 
+                    cluster_t = sum(abs(t_values(b, c, clusters{cluster})));
+                    if cluster_t > threshold
+                        p_values_correct(b, c, clusters{cluster}) = 0.05; 
+                    end
+                end
+            end
+        end
+    end
+end
+fprintf('done.\n')
 
 % save data and measures to the output structures 
 TEP_new_data.shuffled_condition = dataset_shuffled;
@@ -1857,39 +1998,37 @@ TEP_new_measures.stats_condition.t_values = t_values;
 TEP_new_measures.stats_condition.cluster_null_distribution = max_cluster_stats;
 TEP_new_measures.stats_condition.threshold = threshold;
 row_counter = 1;
-for a = 1:size(dataset, 1)
-    for b = 1:size(dataset, 2)-1
-        for c = 1:size(dataset, 4)
-            % find significant samples
-            significant_samples = find(p_values_correct(a, b, c, :) == 0.05);
+for b = 1:size(dataset, 2)
+    for c = 1:size(dataset, 4)
+        % find significant samples
+        significant_samples = find(p_values_correct(b, c, :) == 0.05);
+        
+        if ~isempty(significant_samples)                
+            % identify contiguous clusters of significance
+            clusters = find_contiguous_clusters(significant_samples);
             
-            if ~isempty(significant_samples)                
-                % identify contiguous clusters of significance
-                clusters = find_contiguous_clusters(significant_samples);
+            % store results
+            for cluster = 1:length(clusters)
+                % convert sample indices to actual time values
+                significant_times = params.x((params.toi(1) - 0.001 + 1.5)*1000 + clusters{cluster});
                 
-                % store results
-                for cluster = 1:length(clusters)
-                    % convert sample indices to actual time values
-                    significant_times = params.x((params.toi(1) - 0.001 + 1.5)*1000 + clusters{cluster});
-                    
-                    % encode
-                    TEP_new_measures.stats_condition.clusters(row_counter).condition = params.condition{a};
-                    TEP_new_measures.stats_condition.clusters(row_counter).timepoint = params.timepoint{b+1};
-                    TEP_new_measures.stats_condition.clusters(row_counter).electrode_n = c; 
-                    TEP_new_measures.stats_condition.clusters(row_counter).electrode_label = params.chanlocs(c).labels; 
-                    TEP_new_measures.stats_condition.clusters(row_counter).times{cluster} = significant_times;
-                end
-
-                % update row counter
-                row_counter = row_counter + 1;
+                % encode
+                TEP_new_measures.stats_condition.clusters(row_counter).timepoint = params.timepoint{b+1};
+                TEP_new_measures.stats_condition.clusters(row_counter).electrode_n = c; 
+                TEP_new_measures.stats_condition.clusters(row_counter).electrode_label = params.chanlocs(c).labels; 
+                TEP_new_measures.stats_condition.clusters(row_counter).times{cluster} = significant_times;
             end
+
+            % update row counter
+            row_counter = row_counter + 1;
         end
     end
 end
 save(output_file, 'TEP_new_data', 'TEP_new_measures', '-append')
 
-% clear and move on
-clear 
+%% clear and move on
+clear b c d s p header dataset dataset_shuffled toi p_values p_values_correct t_values data_pain data_control ....
+        perm perm_p_values perm_cluster_stats combined_samples shuffled_labels cluster significant_samples max_cluster_stats
 fprintf('section 11 finished.\n')
 
 %% code scraps
