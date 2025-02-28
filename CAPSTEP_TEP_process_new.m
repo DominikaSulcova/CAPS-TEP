@@ -2107,7 +2107,7 @@ for a = 1:size(dataset, 1)
         end
 
         % find significant spatiotemporal clusters
-        significant_matrix = squeeze(p_values_correct(a, b, :, :) < params.alpha);
+        significant_matrix = squeeze(p_values_correct(a, b, :, :) == 0.05);
         if any(significant_matrix(:))
             clusters = find_spatiotemporal_clusters(significant_matrix, neighbors);
             if ~isempty(clusters)
@@ -2126,7 +2126,32 @@ fprintf('saving output:')
 save(output_file, 'TEP_new_data', 'TEP_new_measures', '-append')
 fprintf('done.\n')
 
-%% identify component TOIs
+% plot null distributions & thresholds
+figure('units','normalized','outerposition',[0 0 1 1]);
+for a = 1:size(dataset, 1)
+    for b = 1:size(dataset, 2)-1
+        % select data
+        visual.values = squeeze(TEP_new_measures.stats_time_ST.cluster_null_distributions(a, b, :))';  
+        visual.threshold = TEP_new_measures.stats_time_ST.thresholds(a, b);
+        visual.title = sprintf('%s condition, %s', params.condition{a}, params.timepoint{b + 1});
+
+        % choose colour 
+        if a == 1
+            visual.color = [0.9216    0.1490    0.1490];
+        elseif a == 2
+            visual.color = [0    0.4471    0.7412];
+        end
+
+        % plot 
+        subplot(size(dataset, 1), size(dataset, 2)-1, (a-1)*(size(dataset, 2)-1) + b)
+        hold on
+        plot_distribution(visual)
+    end
+end
+saveas(fig, sprintf('%s\\figures\\stats_time_ST_distribution.png', folder.output))
+figure_counter = figure_counter + 1;
+
+% identify component TOIs
 for c = 1:length(params.components)
     if strcmp(params.components{c}, 'N45')
         params.TOI(c, 1) = (TEP_new_measures.microstates.N45_P60.toi(1) + 0.5)/1000;
@@ -2164,9 +2189,9 @@ for a = 1:size(dataset, 1)
 
         % select all electrodes containing significant clusters 
         idx = logical([]);
-        for c = 1:length(TEP_new_measures.stats_time.clusters)
-            if strcmp(TEP_new_measures.stats_time.clusters(c).condition, params.condition{a})
-                if strcmp(TEP_new_measures.stats_time.clusters(c).timepoint, params.timepoint{b+1})
+        for c = 1:length(TEP_new_measures.stats_time_ST.clusters)
+            if strcmp(TEP_new_measures.stats_time_ST.clusters(c).condition, params.condition{a})
+                if strcmp(TEP_new_measures.stats_time_ST.clusters(c).timepoint, params.timepoint{b+1})
                     idx(c) = true;
                 else
                     idx(c) = false;
@@ -2175,7 +2200,7 @@ for a = 1:size(dataset, 1)
                 idx(c) = false;
             end
         end
-        significant_electrodes = TEP_new_measures.stats_time.clusters(idx);
+        significant_electrodes = TEP_new_measures.stats_time_ST.clusters(idx);
 
         % plot the clusters
         for e = 1:length(significant_electrodes)
@@ -2235,9 +2260,9 @@ for a = 1:size(dataset, 1)
     for b = 1:size(dataset, 2)
         % identify significant electrodes within this timepoint
         idx = logical([]);
-        for d = 1:length(TEP_new_measures.stats_time.clusters)
-            if strcmp(TEP_new_measures.stats_time.clusters(d).condition, params.condition{a})
-                if strcmp(TEP_new_measures.stats_time.clusters(d).timepoint, params.timepoint{b+1})
+        for d = 1:length(TEP_new_measures.stats_time_ST.clusters)
+            if strcmp(TEP_new_measures.stats_time_ST.clusters(d).condition, params.condition{a})
+                if strcmp(TEP_new_measures.stats_time_ST.clusters(d).timepoint, params.timepoint{b+1})
                     idx(d) = true;
                 else
                     idx(d) = false;
@@ -2246,7 +2271,7 @@ for a = 1:size(dataset, 1)
                 idx(d) = false;
             end
         end
-        significant_electrodes = TEP_new_measures.stats_time.clusters(idx);
+        significant_electrodes = TEP_new_measures.stats_time_ST.clusters(idx);
 
         % cycle through components
         for c = 1:length(params.components)
@@ -2315,13 +2340,13 @@ for a = 1:size(dataset, 1)
 end
 
 % clear and move on
-clear a b c d e f p i header pre_patch post_patch stats p_values t_values toi neighbors ...
-    combined_samples shuffled_labels dataset_shuffled p_values_correct perm_p_values perm_t_values perm_clusters perm_cluster_stat...
+clear a b c d e i j f p s header pre_patch post_patch stats p_values t_values toi neighbors ...
+    combined_samples shuffled_labels dataset_shuffled p_values_correct perm_p_values perm_t_values perm_clusters perm_cluster_stat significant_matrix ...
     max_perm_cluster_stat max_cluster_stats thresholds significant_samples clusters cluster cluster_t perm significant_times cluster_indices ...
-    row_counter fig screen_size x y colors idx significant_electrodes ax statement data cb visual dataset electrode chans2plot 
+    row_counter row_counter_ST fig screen_size x y colors idx significant_electrodes ax statement data cb visual dataset electrode chans2plot 
 fprintf('section 10 finished.\n')
 
-%% 11) statistics: differences across conditions
+%% 11a) statistics: differences across conditions - separately per electrode
 % ----- section input -----
 params.prefix = 'icfilt ica ar ffilt sspsir';
 params.toi = [0.01 0.4];
@@ -2351,7 +2376,7 @@ params.chanlocs = header.chanlocs;
 toi = find(params.x >= params.toi(1) & params.x <= params.toi(2));
 
 % initialize output
-p_values = NaN(size(dataset, 2) - 1, size(dataset, 4), length(toi));
+p_values = NaN(size(dataset, 2), size(dataset, 4), length(toi));
 p_values_correct = ones(size(p_values));
 t_values = NaN(size(p_values));
 
@@ -2620,6 +2645,422 @@ end
 clear a b c d s p header dataset dataset_shuffled toi p_values p_values_correct t_values data_pain data_control ....
         perm perm_p_values perm_cluster_stats combined_samples shuffled_labels cluster significant_samples max_cluster_stats ...
         row_counter fig screen_size x y colors idx significant_electrodes ax statement data visual dataset 
+fprintf('section 11 finished.\n')
+
+%% 11b) statistics: differences across conditions - spatiotemporal clusters
+% ----- section input -----
+params.prefix = 'icfilt ica ar ffilt sspsir';
+params.toi = [0.01 0.4];
+params.max_distance = 0.7;
+params.permutations = 1000;
+params.alpha = 0.05;
+params.plot = [-0.025 0.4];
+params.components = {'N15' 'P30' 'N45' 'P60' 'N100' 'P180'};
+params.N45_offset = 58;
+params.topo_lim = [-2, 2];
+% -------------------------
+fprintf('section 11: statistics - differences across conditions and time\n')
+
+% update
+load(output_file, 'TEP_new_data', 'TEP_new_measures')
+dataset = TEP_new_data.change;
+cd(folder.output)
+clear subject_idx
+
+% load dataset information
+load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')
+params.labels = {header.chanlocs.labels};
+params.x = (0:header.datasize(6)-1)*header.xstep + header.xstart;
+params.chanlocs = header.chanlocs;
+
+% identify analysed time window
+toi = find(params.x >= params.toi(1) & params.x <= params.toi(2));
+
+% initialize output
+p_values = NaN(size(dataset, 2), size(dataset, 4), length(toi));
+p_values_correct = ones(size(p_values));
+t_values = NaN(size(p_values));
+
+% identify neighboring electrodes
+neighbors = find_electrode_neighbors(header.chanlocs, params.max_distance);
+
+% perform sample-wise paired t-test
+fprintf('computing sample-wise paired t-test: ')
+for b = 1:size(dataset, 2)
+    fprintf('. ')
+    for c = 1:size(dataset, 4)
+        for d = 1:length(toi)
+            % extract data from both conditions across subjects
+            data_pain = squeeze(dataset(1, b, :, c, toi(d)))'; 
+            data_control = squeeze(dataset(2, b, :, c, toi(d)))'; 
+            
+            % perform paired t-test
+            [~, p, ~, stats] = ttest(data_pain, data_control);
+            
+            % store results
+            p_values(b, c, d) = p;
+            t_values(b, c, d) = stats.tstat;
+        end
+    end
+end
+fprintf('done.\n')
+
+% run permutations to construct null distribution 
+fprintf('constructing spatiotemporal null distribution: ')
+for perm = 1:params.permutations
+    % update
+    if mod(perm, 100) == 0
+        fprintf('. ')
+    end
+
+    % initiate output
+    perm_p_values = NaN(size(p_values)); 
+    max_cluster_stats(:, perm) = zeros(size(p_values, 1), 1);
+
+    % prepare shuffled dataset
+    dataset_shuffled = dataset;
+    for s = 1:size(dataset, 3)
+        for c = 1:size(dataset, 4)
+            for b = 1:size(dataset, 2) 
+                % extract data from both conditions across the analysed toi
+                data_pain = squeeze(dataset(1, b, s, c, toi))'; 
+                data_control = squeeze(dataset(2, b, s, c, toi))'; 
+
+                % combine data and shuffle labels
+                combined_samples = [data_control, data_pain];
+                shuffled_labels = randperm(length(combined_samples));
+            
+                % reassign shuffled data
+                dataset_shuffled(1, b, s, c, toi) = combined_samples(shuffled_labels(1:length(toi)));
+                dataset_shuffled(2, b, s, c, toi) = combined_samples(shuffled_labels(length(toi)+1:end));
+            end
+        end
+    end
+
+    % recalculate t-tests on shuffled data
+    for b = 1:size(dataset, 2)
+        for c = 1:size(dataset, 4)
+            for d = 1:length(toi)
+                % extract pre-patch and post-patch values across subjects
+                data_pain = squeeze(dataset_shuffled(1, b, :, c, toi(d)))'; 
+                data_control = squeeze(dataset_shuffled(2, b, :, c, toi(d)))'; 
+
+                % paired t-test on shuffled samples
+                [~, p, ~, stats] = ttest(data_pain, data_control);
+
+                % store results
+                perm_p_values(b, c, d) = p;
+                perm_t_values(b, c, d) = stats.tstat;
+            end
+        end
+    end
+
+    % identify spatiotemporal clusters in permuted data
+    max_perm_cluster_stat = zeros(1, size(p_values, 1));
+    for b = 1:size(dataset, 2)
+        % create binary matrix of significant time-electrode pairs
+        significant_matrix = squeeze(perm_p_values(b, :, :) < params.alpha);
+
+        % find spatiotemporal clusters
+        if any(significant_matrix(:))
+            perm_clusters = find_spatiotemporal_clusters(significant_matrix, neighbors);                
+            for cluster = 1:length(perm_clusters)
+                cluster_indices = perm_clusters{cluster};
+                perm_cluster_stat = sum(abs(perm_t_values(b, cluster_indices(:,1), cluster_indices(:,2))), 'all');
+
+                % store max cluster statistic if eligible
+                if perm_cluster_stat > max_perm_cluster_stat(b)
+                    max_perm_cluster_stat(b) = perm_cluster_stat;
+                end
+            end
+        end
+    end
+
+    % store max cluster statistic from this permutation
+    for b = 1:size(dataset, 2)
+        max_cluster_stats(b, perm) = max_perm_cluster_stat(b);
+    end
+end
+fprintf('done.\n')
+
+% compute statistical thresholds = 95th percentile of null distribution
+thresholds = prctile(max_cluster_stats, 95, 2);
+
+% identify significant clusters based on permutation results
+fprintf('identifying significant spatiotemporal clusters in real data: ')
+for b = 1:size(dataset, 2)
+    % create binary matrix of significant time-electrode pairs
+    significant_matrix = squeeze(p_values(b, :, :) < params.alpha);
+
+    % retain only clusters that pass the threshold
+    if any(significant_matrix(:))
+        clusters = find_spatiotemporal_clusters(significant_matrix, neighbors);
+        if ~isempty(clusters)
+            for cluster = 1:length(clusters)
+                % compute overall cluster t-statistic
+                cluster_indices = clusters{cluster};
+                cluster_t = sum(abs(t_values(b, cluster_indices(:,1), cluster_indices(:,2))));
+            
+                % store cluster if significant 
+                if cluster_t > thresholds(b)
+                    for i = 1:size(cluster_indices, 1)
+                        p_values_correct(b, cluster_indices(i,1), cluster_indices(i,2)) = 0.05;
+                    end
+                end
+            end
+        end
+    end
+end
+fprintf('done.\n')
+
+% save data and measures to the output structures 
+TEP_new_data.shuffled_condition_ST = dataset_shuffled;
+TEP_new_measures.stats_condition_ST.toi = params.toi;
+TEP_new_measures.stats_condition_ST.p_values = p_values;
+TEP_new_measures.stats_condition_ST.t_values = t_values;
+TEP_new_measures.stats_condition_ST.cluster_null_distribution = max_cluster_stats;
+TEP_new_measures.stats_condition_ST.threshold = thresholds;
+row_counter = 1;
+row_counter_ST = 1;
+for b = 1:size(dataset, 2)
+    % find significant samples per electrode
+    for c = 1:size(dataset, 4)
+        significant_samples = find(p_values_correct(b, c, :) == 0.05);        
+        if ~isempty(significant_samples)                
+            % identify contiguous clusters of significance
+            clusters = find_contiguous_clusters(significant_samples);
+            
+            % store results
+            for cluster = 1:length(clusters)
+                % convert sample indices to actual time values
+                significant_times = params.x((params.toi(1) - 0.001 + 1.5)*1000 + clusters{cluster});
+                
+                % encode
+                TEP_new_measures.stats_condition_ST.clusters(row_counter).timepoint = params.timepoint{b+1};
+                TEP_new_measures.stats_condition_ST.clusters(row_counter).electrode_n = c; 
+                TEP_new_measures.stats_condition_ST.clusters(row_counter).electrode_label = params.chanlocs(c).labels; 
+                TEP_new_measures.stats_condition_ST.clusters(row_counter).times{cluster} = significant_times;
+            end
+
+            % update row counter
+            row_counter = row_counter + 1;
+        end
+    end
+
+    % find significant spatiotemporal clusters
+    significant_matrix = squeeze(p_values_correct(b, :, :) == 0.05);
+    if any(significant_matrix(:))
+        clusters = find_spatiotemporal_clusters(significant_matrix, neighbors);
+        if ~isempty(clusters)
+            % encode
+            TEP_new_measures.stats_condition_ST.clusters_ST(row_counter_ST).timepoint = params.timepoint{b+1};
+            TEP_new_measures.stats_condition_ST.clusters_ST(row_counter_ST).STclusters = clusters;
+        end
+
+        % update row counter
+        row_counter_ST = row_counter_ST + 1;
+    end
+end
+fprintf('saving output:')
+save(output_file, 'TEP_new_data', 'TEP_new_measures', '-append')
+fprintf('done.\n')
+
+% plot null distributions & thresholds
+figure('units','normalized','outerposition',[0 0 1 1]);
+for b = 1:size(dataset, 2)
+    % select data
+    visual.values = squeeze(TEP_new_measures.stats_condition_ST.cluster_null_distributions(b, :))';  
+    visual.threshold = TEP_new_measures.stats_condition_ST.thresholds(b);
+    visual.title = sprintf('%s', params.timepoint{b + 1});
+    visual.color = [1.0000    0.0745    0.6510];
+
+    % plot 
+    subplot(2, size(dataset, 2), b)
+    hold on
+    plot_distribution(visual)
+end
+saveas(fig, sprintf('%s\\figures\\stats_condition_ST_distribution.png', folder.output))
+figure_counter = figure_counter + 1;
+
+% identify component TOIs
+for c = 1:length(params.components)
+    if strcmp(params.components{c}, 'N45')
+        params.TOI(c, 1) = (TEP_new_measures.microstates.N45_P60.toi(1) + 0.5)/1000;
+        params.TOI(c, 2) = (params.N45_offset - 0.5)/1000;
+    elseif strcmp(params.components{c}, 'P60')
+        params.TOI(c, 1) = (params.N45_offset + 0.5)/1000; 
+        params.TOI(c, 2) = (TEP_new_measures.microstates.N45_P60.toi(2) - 0.5)/1000;
+    else
+        statement = sprintf('params.TOI(c, :) = TEP_new_measures.microstates.%s.toi;', params.components{c});  
+        eval(statement)
+        params.TOI(c, 1) = (params.TOI(c, 1) + 0.5)/1000;
+        params.TOI(c, 2) = (params.TOI(c, 2) - 0.5)/1000;
+    end
+end
+
+% plot significant clusters for each condition and post-patch timepoint
+colors.palette = hsv(size(dataset, 4));
+y.height = 0.8;
+y.offset = 1:size(dataset, 4);
+y.ticks = y.offset + y.height/2; 
+y.labels = params.labels; 
+for b = 1:size(dataset, 2)
+    % launch the figure
+    fig = figure(figure_counter);
+    screen_size = get(0, 'ScreenSize');
+    set(fig, 'Position', [screen_size(3)/4, screen_size(4)/4, screen_size(3)/2, screen_size(4) / 1.5])
+    hold on
+
+    % plot component TOIs
+    for c = 1:length(params.components)
+        rectangle('Position', [params.TOI(c, 1), y.ticks(1) - 1, params.TOI(c, 2) - params.TOI(c, 1), (y.ticks(end) + 1) - (y.ticks(1) - 1)], ...
+              'FaceColor', [0.9020    0.9020    0.9020], 'EdgeColor', 'none'); 
+    end
+
+    % select all electrodes containing significant clusters 
+    idx = logical([]);
+    for c = 1:length(TEP_new_measures.stats_condition_ST.clusters)
+        if strcmp(TEP_new_measures.stats_condition_ST.clusters(c).timepoint, params.timepoint{b+1})
+            idx(c) = true;
+        else
+            idx(c) = false;
+        end
+    end
+    significant_electrodes = TEP_new_measures.stats_condition_ST.clusters(idx);
+
+    % plot the clusters
+    for e = 1:length(significant_electrodes)
+        % assign y offset
+        y.this = y.offset(significant_electrodes(e).electrode_n);
+
+        % assign color
+        colors.this = colors.palette(significant_electrodes(e).electrode_n, :);
+
+        % loop through clusters
+        for d = 1:length(significant_electrodes(e).times)                 
+            % define rectangle position
+            x.start = min(significant_electrodes(e).times{d});
+            x.end = max(significant_electrodes(e).times{d});
+            x.width = x.end - x.start;               
+                
+            % plot rectangle
+            rectangle('Position', [x.start, y.this, x.width, y.height], ...
+                      'FaceColor', colors.this, 'EdgeColor', 'none'); 
+        end
+    end
+
+    % adjust the figure
+    title(sprintf('interaction - %s', params.timepoint{b+1}));
+    xlabel('time (s)');
+    ylabel('electrodes');
+    xlim([params.plot(1) params.plot(2)]);
+    ylim([y.ticks(1) - 1, y.ticks(end) + 1])
+    set(gca, 'FontSize', 14)
+    
+    % set y-ticks at center of rectangles
+    yticks(y.ticks);
+    yticklabels(y.labels);
+
+    % axis visuals
+    box off;
+    ax = gca;
+    ax.XAxisLocation = 'bottom';
+    ax.YAxisLocation = 'left';
+    ax.TickDir = 'out'; 
+    set(gca, 'Layer', 'Top')
+
+    % plot stimulus
+    y.limits = ylim;
+    line([0, 0], y.limits, 'Color', [0.5020    0.5020    0.5020], 'LineWidth', 2.5, 'LineStyle', '--')
+
+    % save figure and update counter
+    saveas(fig, sprintf('%s\\figures\\change_interaction_%s.svg', folder.output, params.timepoint{b+1}))
+    figure_counter = figure_counter + 1;
+end
+
+% plot average change across individual component time windows 
+addpath(genpath([folder.toolbox '\EEGLAB']));
+for b = 1:size(dataset, 2)
+    % identify significant electrodes within this timepoint
+    idx = logical([]);
+    for d = 1:length(TEP_new_measures.stats_condition_ST.clusters)
+        if strcmp(TEP_new_measures.stats_condition_ST.clusters(d).timepoint, params.timepoint{b+1})
+            idx(d) = true;
+        else
+            idx(d) = false;
+        end
+    end
+    significant_electrodes = TEP_new_measures.stats_condition_ST.clusters(idx);
+
+    % cycle through components
+    for c = 1:length(params.components)
+        % identify x limits
+        x.start = (params.TOI(c, 1) - 0.0005 - header.xstart)/header.xstep;
+        x.end = (params.TOI(c, 2) + 0.0005 - header.xstart)/header.xstep;
+
+        % calculate mean change
+        for e = 1:size(dataset, 4)
+            y.data(e) = mean(squeeze(dataset(a, b, :, e, x.start : x.end)), 'all');
+        end
+
+        % select significant electrodes
+        chans2plot = [];
+        if ~isempty(significant_electrodes)
+            for d = 1:length(significant_electrodes)
+                for e = 1:length(significant_electrodes(d).times)
+                    for f = significant_electrodes(d).times{e}
+                        if f >= params.TOI(c, 1) && f <= params.TOI(c, 2)
+                            chans2plot(end + 1) = significant_electrodes(d).electrode_n;
+                        end
+                    end
+                end
+            end
+        end
+        
+        % plot the topography
+        fig = figure(figure_counter);
+        topoplot(double(y.data'), params.chanlocs, 'style', 'map', 'shading', 'interp', 'whitebk', 'on', ...
+                        'maplimits', params.topo_lim, 'electrodes', 'off');
+        hold on
+        title(sprintf('%s: %s', params.components{c}, params.timepoint{b+1}))
+        set(gca, 'FontSize', 14)
+
+        % mark significant electrodes
+        if ~isempty(chans2plot)
+            for i = 1:length(chans2plot)
+                % extract electrode coordinates
+                electrode.theta = params.chanlocs(chans2plot(i)).theta - 90;   
+                electrode.radius = params.chanlocs(chans2plot(i)).radius;   
+
+                % convert polar to cartesian coordinates
+                electrode.x = electrode.radius .* cosd(electrode.theta);  
+                electrode.y = -electrode.radius .* sind(electrode.theta);  
+
+                % adjust for topoplot scaling 
+                electrode.scale_factor = 0.4 / 0.511;
+                electrode.x_scaled = electrode.x * electrode.scale_factor;
+                electrode.y_scaled = electrode.y * electrode.scale_factor;
+
+                hold on;
+                plot(electrode.x_scaled, electrode.y_scaled, 'k*', 'MarkerSize', 10, 'LineWidth', 1.5);
+            end
+        end
+
+        % % add colorbar
+        % cb = colorbar('Location', 'southoutside');  
+        % set(cb, 'Orientation', 'horizontal');  
+        % ylabel(cb, 'amplitude (µV)', 'FontSize', 12);
+
+        % save figure and update counter
+        saveas(fig, sprintf('%s\\figures\\change_topo_interaction_%s.png', folder.output, params.components{c}, params.timepoint{b+1}))
+        figure_counter = figure_counter + 1;
+    end
+end
+
+% clear and move on
+clear a b c d s p header dataset dataset_shuffled toi p_values p_values_correct t_values data_pain data_control ....
+        perm perm_p_values perm_cluster_stats combined_samples shuffled_labels cluster significant_samples max_cluster_stats ...
+        row_counter fig screen_size x y colors idx significant_electrodes ax statement data visual dataset thresholds row_counter_ST
 fprintf('section 11 finished.\n')
 
 %% code scraps
@@ -3146,4 +3587,43 @@ for i = 1:num_electrodes
         end
     end
 end
+end
+function plot_distribution(visual)
+% =========================================================================
+% plots a null distribution of values obtained via permutations, marks the
+% significance threshold
+% input:    visual = structure with fields: 
+%                       - values
+%                       - threshold
+%                       - color
+% =========================================================================  
+% plot the histogram of real values
+histogram(visual.values, 'Normalization', 'pdf', 'FaceColor', visual.color, 'FaceAlpha', 0.4, 'EdgeColor', [1 1 1]); 
+
+% fit a smooth curve to the distribution
+x_range = linspace(min(visual.values), max(visual.values), 100);
+pdf_fit = ksdensity(visual.values, x_range); % kernel density estimate
+plot(x_range, pdf_fit, 'Color', visual.color, 'LineWidth', 2);
+
+% mark the threshold
+x_step = (max(visual.values) - min(visual.values))/100; 
+xline(visual.threshold, 'k--', 'LineWidth', 2);
+text(visual.threshold + x_step*8, max(pdf_fit) * 0.9, sprintf('%.3f', visual.threshold), ...
+'Color', 'k', 'FontSize', 12, 'Rotation', 90, 'FontWeight', 'bold');
+
+% labels + title
+xlabel('cluster size distribution');
+ylabel('probability density');
+title(visual.title);
+
+% appearance
+box off;
+ax = gca;
+ax.XAxisLocation = 'bottom';
+ax.YAxisLocation = 'left';
+ax.TickDir = 'out'; 
+ax.XColor = [0.5020    0.5020    0.5020]; 
+ax.YColor = [0.5020    0.5020    0.5020]; 
+set(gca, 'FontSize', 12)
+set(gca, 'Layer', 'Top')
 end
