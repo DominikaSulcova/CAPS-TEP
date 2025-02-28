@@ -2875,11 +2875,11 @@ for b = 1:size(dataset, 2)
     visual.color = [1.0000    0.0745    0.6510];
 
     % plot 
-    subplot(2, size(dataset, 2), b)
+    subplot(2, size(dataset, 2)/2, b)
     hold on
     plot_distribution(visual)
 end
-saveas(fig, sprintf('%s\\figures\\stats_condition_ST_distribution.png', folder.output))
+saveas(gcf, sprintf('%s\\figures\\stats_condition_ST_distribution.png', folder.output))
 figure_counter = figure_counter + 1;
 
 % identify component TOIs
@@ -2999,9 +2999,13 @@ for b = 1:size(dataset, 2)
         x.end = (params.TOI(c, 2) + 0.0005 - header.xstart)/header.xstep;
 
         % calculate mean change
-        for e = 1:size(dataset, 4)
-            y.data(e) = mean(squeeze(dataset(a, b, :, e, x.start : x.end)), 'all');
+        y.data = [];
+        for s = 1:size(dataset, 3)
+            for e = 1:size(dataset, 4)
+                y.data(s, e, :) = squeeze(dataset(1, b, s, e, x.start : x.end) - dataset(2, b, s, e, x.start : x.end));
+            end
         end
+        y.data = squeeze(mean(y.data, [1, 3]));
 
         % select significant electrodes
         chans2plot = [];
@@ -3019,7 +3023,7 @@ for b = 1:size(dataset, 2)
         
         % plot the topography
         fig = figure(figure_counter);
-        topoplot(double(y.data'), params.chanlocs, 'style', 'map', 'shading', 'interp', 'whitebk', 'on', ...
+        topoplot(double(y.data), params.chanlocs, 'style', 'map', 'shading', 'interp', 'whitebk', 'on', ...
                         'maplimits', params.topo_lim, 'electrodes', 'off');
         hold on
         title(sprintf('%s: %s', params.components{c}, params.timepoint{b+1}))
@@ -3052,14 +3056,15 @@ for b = 1:size(dataset, 2)
         % ylabel(cb, 'amplitude (µV)', 'FontSize', 12);
 
         % save figure and update counter
-        saveas(fig, sprintf('%s\\figures\\change_topo_interaction_%s.png', folder.output, params.components{c}, params.timepoint{b+1}))
+        saveas(fig, sprintf('%s\\figures\\change_topo_interaction_%s_%s.png', folder.output, params.components{c}, params.timepoint{b+1}))
         figure_counter = figure_counter + 1;
     end
 end
 
 % clear and move on
-clear a b c d s p header dataset dataset_shuffled toi p_values p_values_correct t_values data_pain data_control ....
-        perm perm_p_values perm_cluster_stats combined_samples shuffled_labels cluster significant_samples max_cluster_stats ...
+clear a b c d e f i s p header dataset dataset_shuffled toi p_values p_values_correct t_values data_pain data_control perm_cluster_stat perm_clusters ....
+        perm perm_p_values perm_cluster_stats combined_samples shuffled_labels cluster significant_samples max_cluster_stats perm_t_values ...
+        significant_matrix significant_times chans2plot cluster_indices cluster_t clusters electrode max_perm_cluster_stat neighbors stats ...
         row_counter fig screen_size x y colors idx significant_electrodes ax statement data visual dataset thresholds row_counter_ST
 fprintf('section 11 finished.\n')
 
