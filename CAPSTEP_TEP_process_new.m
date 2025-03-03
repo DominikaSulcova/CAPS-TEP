@@ -3068,6 +3068,390 @@ clear a b c d e f i s p header dataset dataset_shuffled toi p_values p_values_co
         row_counter fig screen_size x y colors idx significant_electrodes ax statement data visual dataset thresholds row_counter_ST
 fprintf('section 11 finished.\n')
 
+%% 12) extraction of specific TEP measures
+% ----- section input -----
+params.prefix = 'icfilt ica ar ffilt sspsir';
+params.filename = 'CAPSTEP grand_average';
+params.subjects = 20;
+% -------------------------
+fprintf('section 12: extraction of TEP measures\n')
+
+% update
+load(output_file, 'TEP_new_data', 'TEP_new_measures')
+cd(folder.output)
+clear subject_idx
+
+% load and adjust a header
+data2load = dir(sprintf('%s\\%s*%s*.lw6', folder.processed, params.prefix, study));
+if ~isempty(data2load)
+    load(sprintf('%s\\%s', data2load(1).folder, data2load(1).name), '-mat')
+    header.datasize(1) = 1;
+    header.events = [];
+    params.labels = {header.chanlocs.labels};
+    params.x = (0:header.datasize(6)-1)*header.xstep + header.xstart;
+else 
+    error('ERROR: no suitable headers were wound in the data folder!')
+end
+
+% save grand average TEPs for inspection in letswave
+fprintf('exporting for letswave: ')
+addpath(genpath([folder.toolbox '\letswave 7']));
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)
+        fprintf('. ')
+
+        % export original dataset
+        dataset = TEP_new_data.normalized_flipped;
+        data(1, :, 1, 1, 1, :) = squeeze(mean(dataset(a, b, :, :, :), 3));
+        save(sprintf('%s\\%s %s %s.mat', folder.processed, params.filename, params.condition{a}, params.timepoint{b}), 'data')
+        header.name = sprintf('%s %s %s', params.filename, params.condition{a}, params.timepoint{b});
+        save(sprintf('%s\\%s %s %s.lw6', folder.processed, params.filename, params.condition{a}, params.timepoint{b}), 'header')
+
+        % export change from baseline
+        if b < length(params.timepoint)
+            dataset = TEP_new_data.change;
+            data(1, :, 1, 1, 1, :) = squeeze(mean(dataset(a, b, :, :, :), 3));
+            save(sprintf('%s\\%s change %s %s.mat', folder.processed, params.filename, params.condition{a}, params.timepoint{b+1}), 'data')
+            header.name = sprintf('%s change %s %s', params.filename, params.condition{a}, params.timepoint{b+1});
+            save(sprintf('%s\\%s change %s %s.lw6', folder.processed, params.filename, params.condition{a}, params.timepoint{b+1}), 'header')
+        end
+    end
+end
+fprintf('done.\n')
+cd(folder.processed); letswave
+
+% define timepoints, approximative TOIs and EOIs
+ok = false; 
+measure_counter = 1;
+prompt = {'timepoint:' 'time of interest:' 'electrodes of interest:' 'polarity'};
+definput = {'t' '' '' 'positive/negative'};
+dims = [1 50];
+measures = struct([]);
+while ~ok
+    % encode measure of interest    
+    dlgtitle = sprintf('measure %d', measure_counter);    
+    input = inputdlg(prompt,dlgtitle,dims,definput);
+
+    % save to output structure
+    measures(measure_counter).timepoint = split(input{1}, ',');
+    measures(measure_counter).TOI = str2num(input{2});
+    measures(measure_counter).EOI = split(input{3}, ',');
+    measures(measure_counter).polarity = input{4};
+
+    % ask for continuation
+    answer = questdlg('Add another measure?', 'next step',...
+        'Add', 'Finish', 'Add');
+    switch answer
+        case 'Add'
+            measure_counter = measure_counter + 1;
+        case 'Finish'
+            ok = true;
+    end
+end
+
+% extract information about peak change and precise TOIs
+dataset = TEP_new_data.change;
+for m = 1:length(measures)
+    % identify polarity
+    if strcmp(measures(m).polarity, 'positive')
+        polarity = 1;
+    elseif strcmp(measures(m).polarity, 'negative')
+        polarity = -1;
+    end
+
+    % calculate grand average change
+    data = squeeze(mean(dataset(1, find(strcmp(params.timepoint, measures(m).timepoint)) - 1, :, :, :)));
+
+    % calculate mean change at EOIs
+    eois = find(ismember(params.labels, measures(m).EOI));
+    measures(m).grand_average = mean(data(eois, :), 1); 
+
+    % extract peak measures
+    search_window = find(params.x >= (measures(m).TOI - 0.05) & params.x <= (measures(m).TOI + 0.05));
+    [pks, locs] = findpeaks(polarity * measures(m).grand_average(search_window), params.x(search_window), ...
+                                           'MinPeakProminence', 0.02, ...   
+                                           'WidthReference', 'halfheight');
+    if ~isempty(pks)
+        % select the most prominent peak
+        [~, max_idx] = max(proms); 
+        measures(m).peak_latency = locs(max_idx);
+
+        % find where the signal crosses 0
+        zero_crossings = find(diff(sign(measures(m).grand_average)) ~= 0); 
+
+        % find all other sufficiently prominent inflection points
+        [max_peaks, max_locs] = findpeaks(measures(m).grand_average, params.x, 'MinPeakProminence', 0.02);
+        [min_peaks, min_locs] = findpeaks(-measures(m).grand_average, params.x, 'MinPeakProminence', 0.02);
+        inflection_points = sort([max_locs, min_locs]);
+
+        % extract onset
+        latency_zero = params.x(zero_crossings(find(zero_crossings < find(params.x == locs(max_idx)), 1, 'last')));
+        latency_inflection = inflection_points(find(inflection_points < locs(max_idx), 1, 'last'));
+        if abs(latency_zero - locs(max_idx)) < abs(latency_inflection - locs(max_idx))
+            measures(m).TOI(1) = latency_zero;
+        elseif abs(latency_inflection - locs(max_idx)) < abs(latency_zero - locs(max_idx))
+            measures(m).TOI(1) = latency_inflection;
+        end
+
+        % extract offset
+        latency_zero = params.x(zero_crossings(find(zero_crossings > find(params.x == locs(max_idx)), 1, 'first')));
+        latency_inflection = inflection_points(find(inflection_points > locs(max_idx), 1, 'first'));
+        if abs(latency_zero - locs(max_idx)) < abs(latency_inflection - locs(max_idx))
+            measures(m).TOI(2) = latency_zero;
+        elseif abs(latency_inflection - locs(max_idx)) < abs(latency_zero - locs(max_idx))
+            measures(m).TOI(2) = latency_inflection;
+        end
+
+        % plot mean change + TOI
+        visual.data = measures(m).grand_average; 
+        visual.x = params.x; 
+        fig = figure(figure_counter);
+        plot_ERP(visual, 'shading', 'off', 'interpolated', measures(m).TOI, ...
+            'legend', 'off', 'colours', [0 0 0], 'xlim', [-0.05 0.4])
+        title(sprintf('measure %d - %s', m, measures(m).timepoint))
+
+        % save figure and update counter
+        saveas(fig, sprintf('%s\\figures\\TEP_measure%d_%s.svg', folder.output, m, measures(m).timepoint))
+        figure_counter = figure_counter + 1;
+    end
+end
+
+% add the very late measure and save
+measures(end).TOI = [280, 380];
+measures(end).polarity = 'negative';
+measures(end).EOI = {header.chanlocs.labels};
+TEP_new_measures.TEP_change = measures;  
+save(output_file, 'TEP_new_measures', '-append')
+
+% extract single subject mean change of early measures in pain condition
+fprintf('extracting early measures: ')
+for m = 1:length(measures) - 1 
+    % initiate output structure
+    component = struct([]);
+    fprintf('. ')
+
+    % loop through subjects
+    for s = 1:params.subjects
+        % encode subject ID 
+        component(s).ID = TEP_new(s).ID;
+
+        % select the data at TOI
+        b = find(strcmp(params.timepoint, measures(m).timepoint)) - 1;
+        eois = find(ismember(params.labels, measures(m).EOI));
+        times = find(params.x >= measures(m).TOI(1) & params.x <= measures(m).TOI(2)); 
+        data = squeeze(mean(dataset(1, b, s, eois, times), 4))';
+
+        % identify peak latency & amplitude in TOI signal
+        if strcmp(measures(m).polarity, 'positive')
+            [peak_amplitude, peak_idx] = max(data); 
+        elseif strcmp(measures(m).polarity, 'negative')
+            [peak_amplitude, peak_idx] = min(data); 
+        end
+        peak_latency = params.x(find(params.x == measures(m).TOI(1)) + peak_idx);
+        % peak_latency = params.x(1526 + peak_idx);
+
+        if ~isempty(peak_latency)            
+            % identify timepoints with expected polarity across the full epoch
+            data = squeeze(mean(dataset(1, b, s, eois, :), 4))';
+            if strcmp(measures(m).polarity, 'positive')
+                valid_idx = data > 0; 
+            elseif strcmp(measures(m).polarity, 'negative')
+                valid_idx = data < 0; 
+            end
+            onset_idx = find(params.x < peak_latency & ~valid_idx, 1, 'last') + 1;
+            offset_idx = find(params.x > peak_latency & ~valid_idx, 1, 'first') - 1;
+            component_idx = find(params.x >= params.x(onset_idx) & params.x <= params.x(offset_idx));
+            
+            % encode to the output structure, if onset before group average 
+            % peak latency
+            if params.x(onset_idx) <= measures(m).peak_latency
+                component(s).peak_latency = peak_latency;
+                component(s).peak_amplitude = peak_amplitude;
+                component(s).onset = params.x(onset_idx);
+                component(s).offset = params.x(offset_idx);
+                component(s).duration = params.x(offset_idx) - params.x(onset_idx);
+                if component(s).duration > 0
+                    component(s).AUC = trapz(params.x(component_idx), data(component_idx));
+                else
+                    component(s).AUC = NaN;
+                end
+            else
+                % encode NaNs
+                component(s).peak_latency = NaN;
+                component(s).peak_amplitude = NaN;
+                component(s).onset = NaN;
+                component(s).offset = NaN;
+                component(s).duration = NaN;
+                component(s).AUC = NaN;
+            end
+        else
+            % encode NaNs
+            component(s).peak_latency = NaN;
+            component(s).peak_amplitude = NaN;
+            component(s).onset = NaN;
+            component(s).offset = NaN;
+            component(s).duration = NaN;
+            component(s).AUC = NaN;
+        end
+    end
+
+    % append results to the global output structure
+    TEP_new_measures.TEP_change(m).individual_measures = component;
+
+    % calculate group statistics
+    subject_idx = ~isnan([component.AUC]);
+    TEP_new_measures.TEP_change(m).group_stats.subjects = sum(subject_idx);
+    TEP_new_measures.TEP_change(m).group_stats.subject_idx = find(subject_idx);
+    TEP_new_measures.TEP_change(m).group_stats.peak_latency.mean = mean([component(subject_idx).peak_latency]);
+    TEP_new_measures.TEP_change(m).group_stats.peak_latency.SD = std([component(subject_idx).peak_latency]);
+    TEP_new_measures.TEP_change(m).group_stats.peak_latency.SEM = std([component(subject_idx).peak_latency])/sqrt(sum(subject_idx));
+    TEP_new_measures.TEP_change(m).group_stats.peak_amplitude.mean = mean([component(subject_idx).peak_amplitude]);
+    TEP_new_measures.TEP_change(m).group_stats.peak_amplitude.SD = std([component(subject_idx).peak_amplitude]);
+    TEP_new_measures.TEP_change(m).group_stats.peak_amplitude.SEM = std([component(subject_idx).peak_amplitude])/sqrt(sum(subject_idx));
+    TEP_new_measures.TEP_change(m).group_stats.onset.mean = mean([component(subject_idx).onset]);
+    TEP_new_measures.TEP_change(m).group_stats.onset.SD = std([component(subject_idx).onset]);
+    TEP_new_measures.TEP_change(m).group_stats.onset.SEM = std([component(subject_idx).onset])/sqrt(sum(subject_idx));
+    TEP_new_measures.TEP_change(m).group_stats.offset.mean = mean([component(subject_idx).offset]);
+    TEP_new_measures.TEP_change(m).group_stats.offset.SD = std([component(subject_idx).offset]);
+    TEP_new_measures.TEP_change(m).group_stats.offset.SEM = std([component(subject_idx).offset])/sqrt(sum(subject_idx));
+    TEP_new_measures.TEP_change(m).group_stats.duration.mean = mean([component(subject_idx).duration]);
+    TEP_new_measures.TEP_change(m).group_stats.duration.SD = std([component(subject_idx).duration]);
+    TEP_new_measures.TEP_change(m).group_stats.duration.SEM = std([component(subject_idx).duration])/sqrt(sum(subject_idx));
+    TEP_new_measures.TEP_change(m).group_stats.AUC.mean = mean([component(subject_idx).AUC]);
+    TEP_new_measures.TEP_change(m).group_stats.AUC.SD = std([component(subject_idx).AUC]);
+    TEP_new_measures.TEP_change(m).group_stats.AUC.SEM = std([component(subject_idx).AUC])/sqrt(sum(subject_idx));
+end
+save(output_file, 'TEP_new_measures', '-append')
+fprintf('done.\n')
+
+% extract single subject change GFP at the very late measure TOI
+dataset = TEP_new_data.change_GFP;
+times = find(params.x >= TEP_new_measures.TEP_change(end).TOI(1) & params.x <= TEP_new_measures.TEP_change(end).TOI(2)); 
+component = struct([]);
+for s = 1:params.subjects
+    for a = 1:length(params.condition) 
+        for b = 1:length(params.timepoint) - 1
+            % extract data
+            data = squeeze(dataset(a, b, s, times))';
+
+            % identify peak measures
+            [component(a).peak_amplitude(b, s), peak_idx] = max(data);
+            component(a).peak_latency(b, s) = params.x(find(params.x == TEP_new_measures.TEP_change(end).TOI(1)) + peak_idx);
+
+            % calculate AUC
+            component(a).AUC(b, s) = trapz(params.x(times), data);
+        end
+    end
+end
+TEP_new_measures.TEP_change(end).individual_measures = component;
+
+% calculate group stats
+row_counter = 1;
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint) - 1    
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).condition = params.condition{a};
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).timepoint = params.timepoint{b+1};
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).peak_latency.mean = mean([component(a).peak_latency(b, :)]);
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).peak_latency.SD = std([component(a).peak_latency(b, :)]);
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).peak_latency.SEM = std([component(a).peak_latency(b, :)])/sqrt(20);
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).peak_amplitude.mean = mean([component(a).peak_amplitude(b, :)]);
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).peak_amplitude.SD = std([component(a).peak_amplitude(b, :)]);
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).peak_amplitude.SEM = std([component(a).peak_amplitude(b, :)])/sqrt(20);
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).AUC.mean = mean([component(a).AUC(b, :)]);
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).AUC.SD = std([component(a).AUC(b, :)]);
+        TEP_new_measures.TEP_change(end).group_stats(row_counter).AUC.SEM = std([component(a).AUC(b, :)])/sqrt(20);
+        row_counter = row_counter + 1;
+    end
+end
+save(output_file, 'TEP_new_measures', '-append')
+
+% import and adjust MEP results
+load(output_file, 'CAPSTEP_MEP')
+subject_idx = 1; current_subject = 1;
+for c = 1:height(CAPSTEP_MEP)
+    if current_subject == str2num(CAPSTEP_MEP.subject{c})
+        CAPSTEP_MEP.ID{c} = TEP_new(subject_idx).ID;
+    elseif current_subject < str2num(CAPSTEP_MEP.subject{c})
+        current_subject = str2num(CAPSTEP_MEP.subject{c});
+        subject_idx = subject_idx + 1;
+        CAPSTEP_MEP.ID{c} = TEP_new(subject_idx).ID;
+    end
+end
+
+% export for R together with MEPs 
+TEP_new_export = table;
+row_counter = height(TEP_new_export) + 1;
+for m = 1:length(TEP_new_measures.TEP_change) 
+    if m < length(TEP_new_measures.TEP_change) 
+        for s = 1:params.subjects
+            if ismember(s, TEP_new_measures.TEP_change(m).group_stats.subject_idx)
+                % encode subject info
+                TEP_new_export.measure(row_counter) = m;
+                TEP_new_export.subject{row_counter} = TEP_new(s).ID;
+                TEP_new_export.condition{row_counter} = 'pain';
+                TEP_new_export.timepoint{row_counter} = TEP_new_measures.TEP_change(m).timepoint;
+
+                % encode TEPs
+                TEP_new_export.peak_latency(row_counter) = TEP_new_measures.TEP_change(m).individual_measures(s).peak_latency;
+                TEP_new_export.peak_amplitude(row_counter) = TEP_new_measures.TEP_change(m).individual_measures(s).peak_amplitude;
+                TEP_new_export.onset(row_counter) = TEP_new_measures.TEP_change(m).individual_measures(s).onset;
+                TEP_new_export.offset(row_counter) = TEP_new_measures.TEP_change(m).individual_measures(s).offset;
+                TEP_new_export.duration(row_counter) = TEP_new_measures.TEP_change(m).individual_measures(s).duration;
+                TEP_new_export.AUC(row_counter) = TEP_new_measures.TEP_change(m).individual_measures(s).AUC;
+
+                % encode MEPs
+                TEP_new_export.MEP_change(row_counter) = CAPSTEP_MEP.amplitude_norm(strcmp(CAPSTEP_MEP.ID, TEP_new(s).ID) ...
+                    & strcmp(CAPSTEP_MEP.session, 'caps') ...
+                    & strcmp(CAPSTEP_MEP.timepoint, TEP_new_measures.TEP_change(m).timepoint)) / 100;
+                
+                % update counter
+                row_counter = row_counter + 1;
+            end
+        end
+    else
+        for s = 1:params.subjects
+            for a = 1:length(params.condition)
+                % identidy session label
+                if a == 1
+                    session = 'caps';
+                elseif a == 2
+                    session = 'ctrl';
+                end
+
+                for b = 1:length(params.timepoint) - 1 
+                    % encode subject info
+                    TEP_new_export.measure(row_counter) = m;
+                    TEP_new_export.subject{row_counter} = TEP_new(s).ID;
+                    TEP_new_export.condition{row_counter} = params.condition{a};
+                    TEP_new_export.timepoint{row_counter} = params.timepoint{b+1};
+
+                    % encode TEPs
+                    TEP_new_export.peak_latency(row_counter) = TEP_new_measures.TEP_change(m).individual_measures(a).peak_latency(b, s);
+                    TEP_new_export.peak_amplitude(row_counter) = TEP_new_measures.TEP_change(m).individual_measures(a).peak_amplitude(b, s);
+                    TEP_new_export.AUC(row_counter) = TEP_new_measures.TEP_change(m).individual_measures(a).AUC(b, s);
+                    
+                    % encode MEPs
+                    TEP_new_export.MEP_change(row_counter) = CAPSTEP_MEP.amplitude_norm(strcmp(CAPSTEP_MEP.ID, TEP_new(s).ID) ...
+                        & strcmp(CAPSTEP_MEP.session, session) ...
+                        & strcmp(CAPSTEP_MEP.timepoint, params.timepoint{b+1})) / 100;
+                    
+                    % update counter
+                    row_counter = row_counter + 1;
+                end
+            end
+        end
+    end
+end
+writetable(TEP_new_export, sprintf('%s\\TEP_new_export.csv', folder.output))
+save(output_file, 'TEP_new_export', '-append')
+
+% clear and move on
+clear a b c m s dataset data2load header data ok prompt dlgtitle dims definput input measures measure_counter ...
+    answer current_subject CAPSTEP_MEP times search_window max_idx fig latency_zero latency_inflection session...
+    polarity eois pks locs zero_crossings max_peaks max_locs min_peaks min_locs inflection_points ...
+    peak_amplitude peak_idx peak_latency valid_idx onset_idx offset_idx component_idx component subject_idx AUC visual row_counter
+fprintf('section 12 finished.\n') 
+
 %% code scraps
 % adjust history for ICA
 for a = 2:length(params.condition) 
@@ -3337,7 +3721,7 @@ function plot_ERP(input, varargin)
 %           colours --> n*3 matrix of RGB values
 %           shading --> 'on'(default)/'off'
 %           alpha --> a float (default 0.2)           
-%           plot_legend --> 'on'(default)/'off'
+%           legend --> 'on'(default)/'off'
 %           labels --> cell array with labels for the legend  
 %           legend_loc --> legend location (default 'southeast')
 %           eoi --> label of a channel to be highlighted
