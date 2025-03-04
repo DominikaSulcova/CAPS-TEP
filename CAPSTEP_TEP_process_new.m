@@ -3452,6 +3452,107 @@ clear a b c m s dataset data2load header data ok prompt dlgtitle dims definput i
     peak_amplitude peak_idx peak_latency valid_idx onset_idx offset_idx component_idx component subject_idx AUC visual row_counter
 fprintf('section 12 finished.\n') 
 
+%% 12b) extraction of specific TEP measures - include zero measures
+% ----- section input -----
+params.prefix = 'icfilt ica ar ffilt sspsir';
+params.subjects = 20;
+% -------------------------
+fprintf('section 12: extraction of TEP measures\n')
+
+% update
+load(output_file, 'TEP_new_data', 'TEP_new_measures')
+cd(folder.output)
+clear subject_idx
+
+% load and adjust a header
+data2load = dir(sprintf('%s\\%s*%s*.lw6', folder.processed, params.prefix, study));
+if ~isempty(data2load)
+    load(sprintf('%s\\%s', data2load(1).folder, data2load(1).name), '-mat')
+    header.datasize(1) = 1;
+    header.events = [];
+    params.labels = {header.chanlocs.labels};
+    params.x = (0:header.datasize(6)-1)*header.xstep + header.xstart;
+else 
+    error('ERROR: no suitable headers were wound in the data folder!')
+end
+
+% extract information about peak change including zero values
+for m = 1:3
+    % launch the output
+    TEP_new_measures.TEP_change(m).individual_measures_zero = TEP_new_measures.TEP_change(m).individual_measures;
+
+    % replace NANs with 0
+    for s = 1:params.subjects
+         if isnan(TEP_new_measures.TEP_change(m).individual_measures(s).peak_latency) 
+            TEP_new_measures.TEP_change(m).individual_measures_zero(s).peak_amplitude = 0;
+            TEP_new_measures.TEP_change(m).individual_measures_zero(s).duration = 0;
+            TEP_new_measures.TEP_change(m).individual_measures_zero(s).AUC = 0;
+         elseif TEP_new_measures.TEP_change(m).individual_measures(s).duration == 0 
+             TEP_new_measures.TEP_change(m).individual_measures_zero(s).AUC = 0;
+         end
+    end
+
+    % calculate group statistics
+    TEP_new_measures.TEP_change(m).group_stats_zero.peak_amplitude.mean = mean([TEP_new_measures.TEP_change(m).individual_measures_zero.peak_amplitude]);
+    TEP_new_measures.TEP_change(m).group_stats_zero.peak_amplitude.SD = std([TEP_new_measures.TEP_change(m).individual_measures_zero.peak_amplitude]);
+    TEP_new_measures.TEP_change(m).group_stats_zero.peak_amplitude.SEM = std([TEP_new_measures.TEP_change(m).individual_measures_zero.peak_amplitude])/sqrt(20);
+    TEP_new_measures.TEP_change(m).group_stats_zero.duration.mean = mean([TEP_new_measures.TEP_change(m).individual_measures_zero.duration]);
+    TEP_new_measures.TEP_change(m).group_stats_zero.duration.SD = std([TEP_new_measures.TEP_change(m).individual_measures_zero.duration]);
+    TEP_new_measures.TEP_change(m).group_stats_zero.duration.SEM = std([TEP_new_measures.TEP_change(m).individual_measures_zero.duration])/sqrt(20);
+    TEP_new_measures.TEP_change(m).group_stats_zero.AUC.mean = mean([TEP_new_measures.TEP_change(m).individual_measures_zero.AUC]);
+    TEP_new_measures.TEP_change(m).group_stats_zero.AUC.SD = std([TEP_new_measures.TEP_change(m).individual_measures_zero.AUC]);
+    TEP_new_measures.TEP_change(m).group_stats_zero.AUC.SEM = std([TEP_new_measures.TEP_change(m).individual_measures_zero.AUC])/sqrt(20);
+end
+save(output_file, 'TEP_new_measures', '-append')
+
+% import and adjust MEP results
+load(output_file, 'CAPSTEP_MEP')
+subject_idx = 1; current_subject = 1;
+for c = 1:height(CAPSTEP_MEP)
+    if current_subject == str2num(CAPSTEP_MEP.subject{c})
+        CAPSTEP_MEP.ID{c} = TEP_new(subject_idx).ID;
+    elseif current_subject < str2num(CAPSTEP_MEP.subject{c})
+        current_subject = str2num(CAPSTEP_MEP.subject{c});
+        subject_idx = subject_idx + 1;
+        CAPSTEP_MEP.ID{c} = TEP_new(subject_idx).ID;
+    end
+end
+
+% export for R together with MEPs 
+TEP_new_export_zero = table;
+row_counter = height(TEP_new_export_zero) + 1;
+for m = 1:3
+    for s = 1:params.subjects
+        % encode subject info
+        TEP_new_export_zero.measure(row_counter) = m;
+        TEP_new_export_zero.subject{row_counter} = TEP_new(s).ID;
+        TEP_new_export_zero.condition{row_counter} = 'pain';
+        TEP_new_export_zero.timepoint{row_counter} = TEP_new_measures.TEP_change(m).timepoint;
+
+        % encode TEPs
+        TEP_new_export_zero.peak_latency(row_counter) = TEP_new_measures.TEP_change(m).individual_measures_zero(s).peak_latency;
+        TEP_new_export_zero.peak_amplitude(row_counter) = TEP_new_measures.TEP_change(m).individual_measures_zero(s).peak_amplitude;
+        TEP_new_export_zero.onset(row_counter) = TEP_new_measures.TEP_change(m).individual_measures_zero(s).onset;
+        TEP_new_export_zero.offset(row_counter) = TEP_new_measures.TEP_change(m).individual_measures_zero(s).offset;
+        TEP_new_export_zero.duration(row_counter) = TEP_new_measures.TEP_change(m).individual_measures_zero(s).duration;
+        TEP_new_export_zero.AUC(row_counter) = TEP_new_measures.TEP_change(m).individual_measures_zero(s).AUC;
+
+        % encode MEPs
+        TEP_new_export_zero.MEP_change(row_counter) = CAPSTEP_MEP.amplitude_norm(strcmp(CAPSTEP_MEP.ID, TEP_new(s).ID) ...
+            & strcmp(CAPSTEP_MEP.session, 'caps') ...
+            & strcmp(CAPSTEP_MEP.timepoint, TEP_new_measures.TEP_change(m).timepoint)) / 100;
+        
+        % update counter
+        row_counter = row_counter + 1;
+    end
+end
+writetable(TEP_new_export_zero, sprintf('%s\\TEP_new_export_zero.csv', folder.output))
+save(output_file, 'TEP_new_export_zero', '-append')
+
+% clear and move on
+clear c m s data2load header current_subject CAPSTEP_MEP subject_idx TEP_new_export_zero row_counter
+fprintf('section 12 finished.\n') 
+
 %% code scraps
 % adjust history for ICA
 for a = 2:length(params.condition) 
