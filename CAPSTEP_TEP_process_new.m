@@ -1,15 +1,101 @@
 %% CAPS-TEP: TEP data analysis
 % ------------------------------------------------------------------------
-% author:   Dominik Sulcova
+% author:   Dominika Sulcova
 %           MSH Hamburg, Germany
-% created:  January 2025
+% created:  January - March 2025
 % ------------------------------------------------------------------------
 % data:     raw EEG recordings (NeurOne, Bittium)
 %           - SR 20 kHz
 %           - referenced to mastoids
 %           - ground at AFz
 % script:
-%   1) ...
+%   1) import & pre-process continuous data
+%           - assign electrode coordinates
+%           - check and re-label events, remove the first blind event
+%           - crop continuous data and save for future analysis
+%           - downsample by indicated ratio (default 20)
+%           - remove DC + linear detrend
+%           --> pre-processed data saved in a structure 'dataset'
+%   2) segment and pre-process for visual inspection
+%           - remove mastoids 
+%           - segmented relative to TMS events (default [-1.5 1.5]s)
+%           - remove DC + linear detrend on single epochs
+%           - interpolate TMS artifact (cubic interpolation, default [-5 10]ms)
+%           - concatenate blocks into timepoints, save for letswave
+%           - check datasets visually in letswave
+%   3) export to EEGLAB
+%           - interpolate channels if needed (default 6 neighbor channels)
+%           - save as .set
+%   4) SSP-SIR - removal of the muscular artifact 
+%           - re-reference to common average
+%           - apply SSP-SIR on merged data (spherical model) 
+%           - apply frequency filters - Hamming windowed sinc FIR filter
+%             (default bandpass [0.5 80]Hz, notch [48.5, 51.5]Hz)
+%           - save for letswave, plot output of filtering
+%       ==> at this point, data should be visually inspected and bad trials
+%       manually discarded (implemented in letswave 6)
+%   5) ICA - removal of remaining artifacts 
+%           - load dataset with bad trials removed, encode bad trials
+%           - compute ICA matrix separately for each condition, save for letswave
+%           - plot IC topographies and spectral content
+%       ==> at this point, ICA should be conducted and artifactual ICs
+%       manually discarded based on topography, timecourse, spectral content 
+%       and MARA labelling (implemented in letswave 6)
+%   6) encode ICA
+%           - encode and classify discarded ICs
+%           - extract and plot mean signal at target electrodes (C3,C4)
+%   7) load and plot group data
+%           - perform baseline normalization to z-scores (default [-0.3 -0.005]s)
+%           - flip normalized data to homogenize side of stimulation 
+%               --> flip if right hemisphere stimulated
+%           - plot overall average TEP
+%           - plot overall average GFP
+%           - plot changefrom baseline - butterfly plot
+%           - plot changefrom baseline - GFP
+%   8) export for Ragu
+%           - crop for microstate analysis (default [-0.1 0.4]s)
+%           - save as .csv, create a .xyz montage file 
+%       ==> at this point, microstate analysis should be conducted on
+%       subject-averaged data in RAGU toolbox 
+%   9) import microstates
+%           - load & save microstate maps
+%           - load excel output with microstate measures
+%           - extract measures and encode manually measured time windows
+%   10) statistics: change from baseline
+%       --> obtain cluster-based permutation statistics comparing
+%           pre-patch (= baseline) TEPs and post-patch TEPs at each
+%           timepoint - performed on flipped data
+%               - perform sample-wise paired t-test for each timepoint
+%                 (default analyzed wondow [0.01 0.4]s)
+%               - run permutations to construct null distribution 
+%                 (default 1000 iterations) - in each iteration:
+%                   - construct new permuted dataset by randomly 
+%                   redistributing samples from pre-patch and post-patch 
+%                   analyzed time-windows
+%                   - calculate sample-wise paired t-test in permuted data
+%                   - identify contiguous clusters of significant values
+%                   - store maximum cluster statistic from this iteration
+%               - construct null distribution of maximim cluster statistics
+%               - define significance threshold (default 95th percentile)
+%               - identify contiguous clusters of significant values in
+%               riginal t-test results and retain clusters with summary
+%               t-value > threshold
+%               - plot significant clusters for each condition and timepoint
+%               - plot topography of average change for TEP components
+%       10a: clusters are identified along the time axis separately
+%            for each electrode
+%       10b: 2D clusters are identfied along both the time axis and
+%            in space across neighboring electrodes
+%   11) statistics: differences across conditions
+%       --> obtain cluster-based permutation statistics comparing TEP
+%           change at individual timepoints (post-patch - pre-patch) across 
+%           both conditions
+%       11a: clusters are identified along the time axis separately
+%            for each electrode
+%       11b: 2D clusters are identfied along both the time axis and
+%            in space across neighboring electrodes
+%   12) extraction of specific TEP measures
+%           - exploratory, based on results of sectoin 10 and 11
 % 
 %% parameters
 % directories
@@ -426,7 +512,7 @@ clear data2load a b c d f lwdata option channel_all channel_mask channels2keep h
     code latency concat_idx fig_all open
 fprintf('section 2 finished.\n\n')
 
-%% 3) re-reference and export to EEGLAB
+%% 3) export to EEGLAB
 % ----- section input -----
 params.prefix = 'preprocessed';
 params.interp_chans = 6;
@@ -1508,7 +1594,7 @@ fprintf('section 10: statistics - change from baseline\n')
 load(output_file, 'TEP_new_data', 'TEP_new_measures')
 dataset = TEP_new_data.normalized_flipped;
 cd(folder.output)
-clear dataset subject_idx
+clear subject_idx
 
 % load dataset information
 load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')
@@ -1802,7 +1888,7 @@ for a = 1:size(dataset, 1)
     end
 end
 
-% plot average change across individual component time windows 
+% plot significant change across individual component time windows 
 addpath(genpath([folder.toolbox '\EEGLAB']));
 dataset = TEP_new_data.change;
 for a = 1:size(dataset, 1)
