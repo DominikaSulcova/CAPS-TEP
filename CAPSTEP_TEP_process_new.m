@@ -364,7 +364,7 @@ if exist('dataset') ~= 1
     fprintf('loading dataset...\n')
     data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
     dataset = reload_dataset(data2load, params.condition, 'raw');
-    fprintf('done\n')
+    fprintf('done.\n')
 end
 
 % segment and pre-process
@@ -400,7 +400,7 @@ for a = 1:length(params.condition)
             'x_duration', params.epoch(2)-params.epoch(1), 'suffix', params.suffix{2}, 'is_save', 0);
         lwdata = FLW_segmentation.get_lwdata(lwdata, option);
         if a == 1 && d == 1
-            TEP_new(subject_idx).processing(6).process = sprintf('segmented to pre-stimulus epochs');
+            TEP_new(subject_idx).processing(6).process = sprintf('segmented to epochs');
             TEP_new(subject_idx).processing(6).params.limits = params.epoch;
             TEP_new(subject_idx).processing(6).suffix = params.suffix{2};
             TEP_new(subject_idx).processing(6).date = sprintf('%s', date);
@@ -634,14 +634,6 @@ params.plot_toi = [-0.1 0.5];
 % -------------------------
 fprintf('section 4: SSP-SIR\n')
 
-% load dataset if needed
-if exist('dataset') ~= 1
-    fprintf('re-loading dataset... ')
-    data2load = dir(sprintf('%s*%s*', params.prefix, TEP_new(subject_idx).ID));
-    dataset = reload_dataset(data2load, params.condition, 'processed');
-    fprintf('done.\n')
-end
-
 % add eeglab to the top of search path and launch
 addpath(fullfile(folder.toolbox, 'EEGLAB'));
 eeglab
@@ -667,7 +659,7 @@ for a = 1:length(params.condition)
             TEP_new(subject_idx).processing(10).date = sprintf('%s', date);
         end
     end
-    fprintf('done\n')
+    fprintf('done.\n')
 
     % merge the data
     fprintf('merging ...\n')
@@ -711,7 +703,7 @@ for a = 1:length(params.condition)
     end
     
     % apply frequency filters and save
-    fprintf('final pre-processing:\n')
+    fprintf('applying frequency filters:\n')
     for b = 1:length(params.timepoint)
         fprintf('%s - %s:\n', params.condition{a}, params.timepoint{b})
 
