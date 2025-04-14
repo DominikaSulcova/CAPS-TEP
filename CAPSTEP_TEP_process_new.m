@@ -1099,71 +1099,62 @@ if strcmp(answer, 'YES')
 end
 clear a b data2load prompt definput input dims dlgtitle answer fig screen_size visual eoi data data2plot
 
-%% 7) load and plot group data
+%% 7) flip and save averaged data
 % ----- section input -----
-params.prefix = 'icfilt ica ar ffilt sspsir';
+params.prefix = 'avg bl icfilt ica ar ffilt sspsir';
+params.suffix = {'bl' 'avg' 'flipped'};
 params.subjects = 20;
 params.baseline = [-0.3 -0.005];
 % -------------------------
 fprintf('section 7: load and plot group data\n')
 
 % update
-% load(output_file, 'TEP_new_data')
-% dataset = TEP_new_data;
 clear dataset subject_idx
-cd(folder.output)
+cd(folder.processed)
 
-% load data of all subjects
-fprintf('loading data: ')
+% load data of all subjects, baseline-correct, average across epochs
+addpath(genpath([folder.toolbox '\letswave 7']));
+fprintf('preparing subject-average data: ')
 for a = 1:length(params.condition)
     for b = 1:length(params.timepoint)
         fprintf('. ')
         for s = 1:params.subjects            
             % load the data
-            load(sprintf('%s %s %s %s %s .mat', params.prefix, study, TEP_new(s).ID, params.condition{a}, params.timepoint{b}))
+            name = (sprintf('%s\\%s %s %s %s %s .lw6', folder.raw, params.prefix, study, TEP_new(s).ID, params.condition{a}, params.timepoint{b}));
+            option = struct('filename', name);
+            lwdata = FLW_load.get_lwdata(option);
+
+            % correct for baseline           
+            option = struct('operation', 'substract', 'xstart', params.baseline(1), 'xend', params.baseline(2), 'suffix', params.suffix{1}, 'is_save', 1);
+            lwdata = FLW_baseline.get_lwdata(lwdata, option);
+            if a == 1 && b == 1
+                TEP_new(s).processing(16).process = sprintf('corrected for baseline');
+                TEP_new(s).processing(16).params.method = 'mean substraction';
+                TEP_new(s).processing(16).params.limits = params.baseline;
+                TEP_new(s).processing(16).suffix = params.suffix{1};
+                TEP_new(s).processing(16).date = sprintf('%s', date);
+            end
+
+            % average across epochs           
+            option = struct('operation', 'average', 'suffix', params.suffix{2}, 'is_save', 1);
+            lwdata = FLW_average_epochs.get_lwdata(lwdata, option);
+            if a == 1 && b == 1
+                TEP_new(s).processing(17).process = sprintf('averaged across epochs');
+                TEP_new(s).processing(17).suffix = params.suffix{2};
+                TEP_new(s).processing(17).date = sprintf('%s', date);
+            end
 
             % append to the dataset
-            dataset.avg(a, b, s, :, :) = squeeze(mean(data, 1));
+            dataset.avg(a, b, s, :, :) = squeeze(lwdata.data);
         end
     end
 end
 fprintf('done.\n')
 
-% load dataset information
-load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')
-params.labels = {header.chanlocs.labels};
-params.x = (0:header.datasize(6)-1)*header.xstep + header.xstart;
-params.chanlocs = header.chanlocs;
-
-% perform baseline normalization to z-scores
-fprintf('correcting for baseline: ')
-baseline.idx = find(params.x >= params.baseline(1) & params.x <= params.baseline(2));
-dataset.normalized = dataset.avg;
-for a = 1:length(params.condition)
-    for b = 1:length(params.timepoint)
-        fprintf('. ')
-        for s = 1:params.subjects 
-            for c = 1:length(params.chanlocs)
-                % extract baseline segment
-                baseline.values = squeeze(dataset.normalized(a, b, s, c, baseline.idx));
-
-                % compute mean and standard deviation of baseline
-                baseline.mean = mean(baseline.values, 'all');
-                baseline.std = std(baseline.values, 0, 'all');
-
-                % normalize the signal
-                if baseline.std > 0  
-                    dataset.normalized(a, b, s, c, :) = (squeeze(dataset.normalized(a, b, s, c, :)) - baseline.mean) / baseline.std;
-                else
-                    warning('Baseline std = 0 for %s condition, timepoint %s, subject %d, electrode %s. No normalization applied.', ...
-                        params.condition{a}, params.timepoint{b}, s, params.labels{c});
-                end
-                
-            end
-        end
-    end
-end
-fprintf('done.\n')
+% extract dataset information
+params.labels = {lwdata.header.chanlocs.labels};
+params.x = (0:lwdata.header.datasize(6)-1)*lwdata.header.xstep + lwdata.header.xstart;
+params.chanlocs = lwdata.header.chanlocs;
 
 % prepare flip dictionary
 labels_flipped = params.labels;
@@ -1192,34 +1183,64 @@ for i = 1:length(params.labels)
 end
 labels_dict = cat(1, params.labels, labels_flipped)';
 
-% flip normalized data to homogenize side of stimulation --> if right, flip
-fprintf('flipping data: ')
+% flip normalized data to homogenize side of stimulation 
 addpath(genpath([folder.toolbox '\letswave 6']));
-header.datasize(1) = 1;
+header = lwdata.header;
+fprintf('flipping data: ')
 for s = 1:params.subjects 
     fprintf('. ')
     for a = 1:length(params.condition)
         for b = 1:length(params.timepoint)
+            % if right hemisphere was stimulated, flip
             if contains(TEP_new(s).stimulation(a).hemisphere, 'right')
-                data(1, :, 1, 1, 1, :) = squeeze(dataset.normalized(a, b, s, :, :));
+                data(1, :, 1, 1, 1, :) = squeeze(dataset.avg(a, b, s, :, :));
                 [header, data, ~] = RLW_flip_electrodes(header, data, labels_dict);
-                dataset.normalized_flipped(a, b, s, :, :) = squeeze(data);
+                dataset.flipped(a, b, s, :, :) = squeeze(data);
             else
-                dataset.normalized_flipped(a, b, s, :, :) = dataset.normalized(a, b, s, :, :);
+                dataset.flipped(a, b, s, :, :) = dataset.avg(a, b, s, :, :);
             end
+
+            % export to letswave 
+            header.name = sprintf('%s %s %s %s %s %s ', strjoin(params.suffix([3,2,1]), ' '), params.prefix, study, TEP_new(s).ID, params.condition{a}, params.timepoint{b});
+            data(1, :, 1, 1, 1, :) = squeeze(dataset.flipped(a, b, s, :, :));
+            save([header.name '.mat'], 'data'); 
+            save([header.name '.lw6'], 'header');             
         end
     end
 end
 fprintf('done.\n')
 
-% % export to letswave to check the flip
-% header.name = 'original';
-% data(1, :, 1, 1, 1, :) = squeeze(dataset.normalized(2, 1, 1, :, :));
-% save('original.mat', 'data'); save('original.lw6', 'header'); 
-% header.name = 'flipped';
-% data(1, :, 1, 1, 1, :) = squeeze(dataset.normalized_flipped(2, 1, 1, :, :));
-% save('flipped.mat', 'data'); save('flipped.lw6', 'header'); 
-% letswave
+% clear and move on
+clear a b i s name data header lwdata option label_new labels_dict labels_flipped electrode_n
+fprintf('section 7 finished.\n')
+
+%% 8) plot group data
+% ----- section input -----
+params.prefix = 'icfilt ica ar ffilt sspsir';
+params.subjects = 20;
+params.baseline = [-0.3 -0.005];
+% -------------------------
+fprintf('section 8: load and plot group data\n')
+
+% update
+clear dataset subject_idx
+cd(folder.output)
+
+% load data of all subjects
+fprintf('loading data: ')
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)
+        fprintf('. ')
+        for s = 1:params.subjects            
+            % load the data
+            load(sprintf('%s %s %s %s %s .mat', params.prefix, study, TEP_new(s).ID, params.condition{a}, params.timepoint{b}))
+
+            % append to the dataset
+            dataset.avg(a, b, s, :, :) = squeeze(mean(data, 1));
+        end
+    end
+end
+fprintf('done.\n')
 
 % calculate change from baseline + its GFP
 for a = 1:length(params.condition)
