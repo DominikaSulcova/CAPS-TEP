@@ -45,7 +45,8 @@
 %           - encode and classify discarded ICs
 %           - extract and plot mean signal at target electrodes (C3,C4)
 %   7) load and plot group data
-%           - perform baseline normalization to z-scores (default [-0.3 -0.005]s)
+%           - perform baseline normalization by subtraction 
+%               (default baseline epoch [-0.3 -0.005]s)
 %           - flip normalized data to homogenize side of stimulation 
 %               --> flip if right hemisphere stimulated
 %           - plot overall average TEP
@@ -1101,7 +1102,7 @@ clear a b data2load prompt definput input dims dlgtitle answer fig screen_size v
 
 %% 7) flip and save averaged data
 % ----- section input -----
-params.prefix = 'avg bl icfilt ica ar ffilt sspsir';
+params.prefix = 'icfilt ica ar ffilt sspsir';
 params.suffix = {'bl' 'avg' 'flipped'};
 params.subjects = 20;
 params.baseline = [-0.3 -0.005];
@@ -1216,15 +1217,15 @@ fprintf('section 7 finished.\n')
 
 %% 8) plot group data
 % ----- section input -----
-params.prefix = 'icfilt ica ar ffilt sspsir';
+params.prefix = 'flipped avg bl icfilt ica ar ffilt sspsir';
 params.subjects = 20;
 params.baseline = [-0.3 -0.005];
+params.eoi = {'Cz' 'C3'};
 % -------------------------
 fprintf('section 8: load and plot group data\n')
 
 % update
 clear dataset subject_idx
-cd(folder.output)
 
 % load data of all subjects
 fprintf('loading data: ')
@@ -1246,7 +1247,7 @@ fprintf('done.\n')
 for a = 1:length(params.condition)
     for b = 2:length(params.timepoint)
         for s = 1:params.subjects
-            dataset.change(a, b-1, s, :, :) = dataset.normalized_flipped(a, b, s, :, :) - dataset.normalized_flipped(a, 1, s, :, :);
+            dataset.change(a, b-1, s, :, :) = dataset.avg(a, b, s, :, :) - dataset.avg(a, 1, s, :, :);
             dataset.change_GFP(a, b-1, s, :) = std(dataset.change(a, b-1, s, :, :), 1, 4);
         end
     end
@@ -1262,34 +1263,43 @@ visual.t_value = tinv(0.975, size(dataset.change_GFP, 3) - 1);
 fprintf('plotting overall average TEP... \n')
 
 % extract overall mean values
-for c = 1:size(dataset.normalized_flipped, 4)
-    dataset.visual_mean.data(c, :) = squeeze(mean(dataset.normalized_flipped(:, :, :, c, :), 1:3))'; 
-    dataset.visual_mean.sem(c, :) = squeeze(std(dataset.normalized_flipped(:, :, :, c, :), 0, 1:3))'; 
+for c = 1:size(dataset.avg, 4)
+    dataset.visual_mean.data(c, :) = squeeze(mean(dataset.avg(:, :, :, c, :), 1:3))'; 
+    dataset.visual_mean.sd(c, :) = squeeze(std(dataset.avg(:, :, :, c, :), 0, 1:3))'; 
+    dataset.visual_mean.sem(c, :) = dataset.visual_mean.sd(c, :) / sqrt(size(dataset.avg(a, b, :, :), 3)); 
     dataset.visual_mean.CI_upper(c, :) = dataset.visual_mean.data(c, :) + visual.t_value * dataset.visual_mean.sem(c, :); 
     dataset.visual_mean.CI_lower(c, :) = dataset.visual_mean.data(c, :) - visual.t_value * dataset.visual_mean.sem(c, :);
 end
-
-% launch the figure
-fig = figure(figure_counter);
-screen_size = get(0, 'ScreenSize');
-set(fig, 'Position', [screen_size(3)/4, screen_size(4)/4, screen_size(3)/2, screen_size(4) / 2])
 
 % select plotting colours
 for c = 1:length(params.chanlocs)
     visual.colors(c, :) = [0.3020    0.7451    0.9333];
 end
-
-% select the data
+   
+% plot TEP as butterfly plot
+screen_size = get(0, 'ScreenSize');
 visual.data = dataset.visual_mean.data;
-visual.CI_upper = dataset.visual_mean.CI_upper;
-visual.CI_lower = dataset.visual_mean.CI_lower;
-    
-% plot 
+fig = figure(figure_counter);
+set(fig, 'Position', [screen_size(3)/4, screen_size(4)/4, screen_size(3)/2, screen_size(4) / 2])
 plot_ERP(visual, 'xlim', [-0.1 0.4], 'colours', visual.colors, 'legend', 'off', 'shading', 'off', 'interpolated', [-0.005 0.01], 'eoi', 'Cz')
-
-% save figure and update counter
-saveas(fig, sprintf('%s\\figures\\group_avg.svg', folder.output))
+saveas(fig, sprintf('%s\\figures\\group_avg_butterfly.svg', folder.output))
 figure_counter = figure_counter + 1;
+
+% plot TEP per EOI
+for e = 1:length(params.eoi)
+    % identify EOI and select data
+    eoi = find(strcmp(params.labels, params.eoi{e}));
+    visual.data = dataset.visual_mean.data(eoi, :);
+    visual.CI_upper = dataset.visual_mean.CI_upper(eoi, :);
+    visual.CI_lower = dataset.visual_mean.CI_lower(eoi, :);
+
+    % plot and save
+    fig = figure(figure_counter);
+    set(fig, 'Position', [screen_size(3)/4, screen_size(4)/4, screen_size(3)/2, screen_size(4) / 2])
+    plot_ERP(visual, 'xlim', [-0.1 0.4], 'colours', [0    0.4471    0.7412], 'legend', 'off', 'interpolated', [-0.005 0.01])
+    saveas(fig, sprintf('%s\\figures\\group_avg_%s.svg', folder.output, params.eoi{e}))
+    figure_counter = figure_counter + 1;
+end
 
 % ============== overall average GFP ==============
 fprintf('plotting overall average GFP... \n')
@@ -1316,10 +1326,10 @@ fprintf('plotting change... \n')
 for a = 1:length(params.condition)
     for b = 1:length(params.timepoint)-1   
         for c = 1:length(params.chanlocs)
-            dataset.visual_butterfly.data(a, b, c, :) = squeeze(mean(dataset.change(a, b, :, c, :), 3))';  
-            dataset.visual_butterfly.sem(a, b, c, :) = squeeze(std(dataset.change(a, b, :, c, :), 0, 3))' / sqrt(size(dataset.change(a, b, :, c, :), 3)); 
-            dataset.visual_butterfly.CI_upper(a, b, c, :) = dataset.visual_butterfly.data(a, b, c, :) + visual.t_value * dataset.visual_butterfly.sem(a, b, c, :); 
-            dataset.visual_butterfly.CI_lower(a, b, c, :) = dataset.visual_butterfly.data(a, b, c, :) - visual.t_value * dataset.visual_butterfly.sem(a, b, c, :);
+            dataset.visual_change.data(a, b, c, :) = squeeze(mean(dataset.change(a, b, :, c, :), 3))';  
+            dataset.visual_change.sem(a, b, c, :) = squeeze(std(dataset.change(a, b, :, c, :), 0, 3))' / sqrt(size(dataset.change(a, b, :, c, :), 3)); 
+            dataset.visual_change.CI_upper(a, b, c, :) = dataset.visual_change.data(a, b, c, :) + visual.t_value * dataset.visual_change.sem(a, b, c, :); 
+            dataset.visual_change.CI_lower(a, b, c, :) = dataset.visual_change.data(a, b, c, :) - visual.t_value * dataset.visual_change.sem(a, b, c, :);
         end
     end 
 end
@@ -1343,9 +1353,9 @@ for a = 1:length(params.condition)
         end
 
         % select the data
-        visual.data = squeeze(dataset.visual_butterfly.data(a, b, :, :));
-        visual.CI_upper = squeeze(dataset.visual_butterfly.CI_upper(a, b, :, :));
-        visual.CI_lower = squeeze(dataset.visual_butterfly.CI_lower(a, b, :, :));
+        visual.data = squeeze(dataset.visual_change.data(a, b, :, :));
+        visual.CI_upper = squeeze(dataset.visual_change.CI_upper(a, b, :, :));
+        visual.CI_lower = squeeze(dataset.visual_change.CI_lower(a, b, :, :));
     
         % plot averages of both conditions in one plot
         subplot(2, length(params.timepoint)-1, (a-1)*(length(params.timepoint)-1) + b)
@@ -1427,23 +1437,26 @@ saveas(fig, sprintf('%s\\figures\\group_change_GFP.png', folder.output))
 figure_counter = figure_counter + 1;
 
 % save the dataset and clean up
+fprintf('saving data... \n')
 TEP_new_data = dataset;
 save(output_file, 'TEP_new_data', '-append')
-clear a b c s i data header data baseline fig screen_size visual electrode_n ...
-    labels_flipped labels_dict label_new
-fprintf('section 7 finished.\n')
+clear a b c e s i data header data baseline fig screen_size visual electrode_n ...
+    labels_flipped labels_dict label_new eoi
+fprintf('section 8 finished.\n')
 
 %% 8) export for Ragu
 % ----- section input -----
-params.prefix = 'icfilt ica ar ffilt sspsir';
+params.prefix = 'flipped avg bl icfilt ica ar ffilt sspsir';
 params.subjects = 20;
 params.toi = [-0.1 0.4];
 % -------------------------
-fprintf('section 8: export for Ragu\n')
+fprintf('section 9: export for Ragu\n')
 
-% update
-load(output_file, 'TEP_new_data')
-dataset = TEP_new_data;
+% update dataset
+if exist('TEP_new_data') ~= 1 
+    load(output_file, 'TEP_new_data')
+    dataset = TEP_new_data;
+end
 
 % calculate crop limits
 load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')                   
@@ -1455,7 +1468,7 @@ for a = 1:length(params.condition)
     for b = 1:length(params.timepoint)  
         for s = 1:params.subjects
             % select data
-            data = squeeze(dataset.normalized_flipped(a, b, s, :, x_start:x_end))';
+            data = squeeze(dataset.avg(a, b, s, :, x_start:x_end))';
 
             % save as .csv               
             name = sprintf('%s_%s_%s_%s.csv', study, TEP_new(s).ID, params.condition{a}, params.timepoint{b}); 
@@ -1476,7 +1489,7 @@ fclose(fileID)
 
 % clear and move on
 clear a b c s header x_start x_end data name fileID
-fprintf('section 8 finished.\n')
+fprintf('section 9 finished.\n')
 
 %% 9) import microstates
 % ----- section input -----
