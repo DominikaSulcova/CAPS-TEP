@@ -1253,13 +1253,40 @@ for a = 1:length(params.condition)
     end
 end
 
+% save group-average TEP per condition - raw and change
+fprintf('saving grand_average data for letswave... \n')
+addpath(genpath([folder.toolbox '\letswave 7']));
+load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')    
+for a = 1:length(params.condition)
+    for b = 1:length(params.timepoint)
+        % select, average, and save raw data
+        lwdata.data(1, :, 1, 1, 1, :) =  squeeze(mean(dataset.avg(a, b, :, :, :), 3));
+        lwdata.header = header;
+        lwdata.header.name = sprintf('%s grand_average %s %s', study, params.condition{a}, params.timepoint{b});
+        CLW_save(lwdata)
+
+        % select, average and save change from baseline
+        if b > 1
+            lwdata.data(1, :, 1, 1, 1, :) =  squeeze(mean(dataset.change(a, b-1, :, :, :), 3));
+            lwdata.header = header;
+            lwdata.header.name = sprintf('%s grand_average change %s %s', study, params.condition{a}, params.timepoint{b});
+            CLW_save(lwdata)
+        end
+    end
+end
+
+% extract dataset information
+params.labels = {lwdata.header.chanlocs.labels};
+params.x = (0:lwdata.header.datasize(6)-1)*lwdata.header.xstep + lwdata.header.xstart;
+params.chanlocs = lwdata.header.chanlocs;
+
 % define common visual parameters
 visual.x = params.x;
 visual.labels = params.condition;
 visual.chanlabels = params.labels;
 visual.t_value = tinv(0.975, size(dataset.change_GFP, 3) - 1); 
 
-% ============== overall average TEP ==============
+% ============== plot overall average TEP ==============
 fprintf('plotting overall average TEP... \n')
 
 % extract overall mean values
@@ -1441,10 +1468,10 @@ fprintf('saving data... \n')
 TEP_new_data = dataset;
 save(output_file, 'TEP_new_data', '-append')
 clear a b c e s i data header data baseline fig screen_size visual electrode_n ...
-    labels_flipped labels_dict label_new eoi
+    labels_flipped labels_dict label_new eoi lwdata
 fprintf('section 8 finished.\n')
 
-%% 8) export for Ragu
+%% 9) export for Ragu
 % ----- section input -----
 params.prefix = 'flipped avg bl icfilt ica ar ffilt sspsir';
 params.subjects = 20;
@@ -1452,7 +1479,7 @@ params.toi = [-0.1 0.4];
 % -------------------------
 fprintf('section 9: export for Ragu\n')
 
-% update dataset
+% update dataset if necessary
 if exist('TEP_new_data') ~= 1 
     load(output_file, 'TEP_new_data')
     dataset = TEP_new_data;
@@ -1491,21 +1518,22 @@ fclose(fileID)
 clear a b c s header x_start x_end data name fileID
 fprintf('section 9 finished.\n')
 
-%% 9) import microstates
+%% 10) import microstates
 % ----- section input -----
 params.filenames = {'CAPSTEP_new.mat' 'microstates_export.xlsx'};
 params.MS_labels = {'N15' 'P180' 'P30' 'N45_P60' 'N100' '' ''};
 params.MS_variables = {'On' 'Off' 'Dur' 'AUC' 'COG' 'GFP'};
 params.MS_measures = {'onset' 'offset' 'duration' 'AUC' 'COG' 'GFP'};
 params.MS_manual.N15 = [11, 21];
-params.MS_manual.P180 = [143, 234];
-params.MS_manual.P30 = [25, 40];
+params.MS_manual.P180 = [143, 235];
+params.MS_manual.P30 = [26, 40];
 params.MS_manual.N45_P60 = [41, 84];
 params.MS_manual.N100 = [85, 122];
 % -------------------------
-fprintf('section 9: import microstate info\n')
+fprintf('section 10: import microstate info\n')
 
 % load & save microstate maps
+fprintf('loading MS maps... \n')
 load(sprintf('%s\\microstates\\%s', folder.output, params.filenames{1}))
 for a = 1:length(params.MS_labels)
     if isempty(params.MS_labels{a})
@@ -1543,6 +1571,7 @@ for c = 1:length(params.MS_labels)
 end
 
 % extract data from the Excel
+fprintf('extracting single-subject data... \n')
 for e = 1:numel(export.sheets)
     if contains(export.sheets{e}, 'Class')
         % identify microstate class
@@ -1582,7 +1611,7 @@ for e = 1:numel(export.sheets)
                 end
                 
                 % save to the output structure
-                statement = sprintf('TEP_new_measures.microstates.%s.mean.%s = nanmean(data);', ...
+                statement = sprintf('TEP_new_measures.microstates.%s.mean.%s = mean(data_all(~isnan(data_all)));', ...
                     params.MS_labels{export.class}, params.MS_measures{c}, params.MS_labels{export.class}, params.MS_measures{c});
                 eval(statement)
             end
@@ -1591,6 +1620,7 @@ for e = 1:numel(export.sheets)
 end
 
 % encode manually measured time windows
+fprintf('saving manual measures... \n')
 for a = 1:length(params.MS_labels)
     if idx(a)
         statement = sprintf('TEP_new_measures.microstates.%s.toi = params.MS_manual.%s;', params.MS_labels{a}, params.MS_labels{a});
@@ -1601,7 +1631,91 @@ save(output_file, 'TEP_new_measures', '-append')
 
 % clear and move on
 clear a b c d e s rd idx export counter statement data data_all
-fprintf('section 9 finished.\n')
+fprintf('section 10 finished.\n')
+
+%% 11) statistics in letswave 
+% ----- section input -----
+params.prefix = 'flipped avg bl icfilt ica ar ffilt sspsir';
+params.comparison = {'condition' 'time' 'condition_time'};
+% -------------------------
+fprintf('section 11: \n')
+
+% add letswave to the search path
+addpath(genpath([folder.toolbox '\letswave 7']));
+
+% update dataset if necessary
+if exist('TEP_new_data') ~= 1 
+    fprintf('re-loading the dataset... \n')
+    load(output_file, 'TEP_new_data')
+    dataset = TEP_new_data;
+end
+if exist('subject_idx') == 1
+    clear subject_idx
+end
+
+% load default header
+load(sprintf('%s\\%s %s %s %s %s .lw6', folder.processed, params.prefix, study, TEP_new(1).ID, params.condition{1}, params.timepoint{1}), '-mat')  
+
+% save data per condition for letswave
+fprintf('exporting datasets for letswave...\n')
+for c = 1:length(params.comparison)
+    switch params.comparison{c}
+        case 'condition' 
+            for a = 1:size(dataset.avg, 1)
+                % select data
+                subset = squeeze(mean(dataset.avg(a, :, :, :, :), 2));
+                lwdata.data(:, :, 1, 1, 1, :) = subset;
+
+                % create header
+                lwdata.header = header;
+                lwdata.header.name = sprintf('stats %s %s', params.comparison{c}, params.condition{a});
+                lwdata.header.datasize = size(lwdata.data);
+
+                % save
+                CLW_save(lwdata)
+            end
+        case 'time'
+            for a = 1:size(dataset.avg, 2)
+                % select data
+                subset = squeeze(mean(dataset.avg(:, a, :, :, :), 1));
+                lwdata.data(:, :, 1, 1, 1, :) = subset;
+
+                % create header
+                lwdata.header = header;
+                lwdata.header.name = sprintf('stats %s %s', params.comparison{c}, params.timepoint{a});
+                lwdata.header.datasize = size(lwdata.data);
+
+                % save
+                CLW_save(lwdata)
+            end
+        case 'condition_time'
+            for a = 1:size(dataset.avg, 1)
+                for b = 1:size(dataset.avg, 2)
+                    % select data
+                    subset = squeeze(dataset.avg(a, b, :, :, :));
+                    lwdata.data(:, :, 1, 1, 1, :) = subset;
+    
+                    % create header
+                    lwdata.header = header;
+                    lwdata.header.name = sprintf('stats %s %s %s', params.comparison{c}, params.condition{a}, params.timepoint{b});
+                    lwdata.header.datasize = size(lwdata.data);
+    
+                    % save
+                    CLW_save(lwdata)
+                end
+            end
+    end
+end
+
+LW_init();
+option=struct('filename',{{'D:\ICAN\AG-Baumgärtner\2024_CAPS-TEP\stats condition control.lw6','D:\ICAN\AG-Baumgärtner\2024_CAPS-TEP\stats condition pain.lw6'}});
+lwdataset= FLW_load.get_lwdataset(option);
+option=struct('factor_name','W:condition','alpha',0.05,'permutation',1,'cluster_threshold',0.05,'num_permutations',2000,'show_progress',1,'multiple_sensor',1,'chan_dist',0.31725,'suffix','anova_condition','is_save',1);
+lwdata= FLW_ANOVA_permutation.get_lwdata(lwdataset,option);
+
+% clear and move on
+clear a c header subset lwdata
+fprintf('section 11 finished.\n')
 
 %% 10a) statistics: change from baseline - separately per electrode
 % ----- section input -----
